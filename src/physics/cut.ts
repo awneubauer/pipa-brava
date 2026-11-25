@@ -135,6 +135,10 @@ export type CutEmit = (type: WorldEventType, flyer: number, x: number, y: number
 
 export class CutSystem {
   readonly crossings: Crossing[] = [];
+  /** carga mínima (modo Batalha: linha meio frouxa ainda corta, para ser fácil de jogar) */
+  minLoad = 0;
+  /** multiplica todo o dano (modo Batalha: cortes mais rápidos, partidas curtas) */
+  kMul = 1;
   /** pares (índices) que podem se cortar */
   pairs: number[] = [];
   /** cortes realizados por flyer (quem cortou) */
@@ -336,8 +340,11 @@ export class CutSystem {
     const feedB = Math.abs((mBx - vcx) * dbx + (mBy - vcy) * dby);
     const concA = concentration(feedA, feedB);
     const concB = concentration(feedB, feedA);
-    const rateA = damageRate(B.lineType.sharpness, slide, A.tension01, B.tension01, A.lineType.resistance, concA);
-    const rateB = damageRate(A.lineType.sharpness, slide, B.tension01, A.tension01, B.lineType.resistance, concB);
+    const ml = this.minLoad;
+    const tA = A.tension01 > ml ? A.tension01 : ml;
+    const tB = B.tension01 > ml ? B.tension01 : ml;
+    const rateA = damageRate(B.lineType.sharpness * B.sharpMul, slide, tA, tB, A.lineType.resistance, concA) * A.damageTaken * this.kMul;
+    const rateB = damageRate(A.lineType.sharpness * A.sharpMul, slide, tB, tA, B.lineType.resistance, concB) * B.damageTaken * this.kMul;
     c.slide = slide;
     c.rateA = rateA;
     c.rateB = rateB;
@@ -361,6 +368,14 @@ export class CutSystem {
       this.cutsBy[W.index] = (this.cutsBy[W.index] ?? 0) + 1;
       emit('cut', L.index, h.x, h.y, 1, W.index);
       c.active = false;
+    }
+  }
+
+  /** Esquece os cruzamentos de um flyer (quando uma vaga de inimigo renasce). */
+  clearFlyer(index: number): void {
+    for (let i = 0; i < this.crossings.length; i++) {
+      const c = this.crossings[i];
+      if (c.active && (c.a === index || c.b === index)) c.active = false;
     }
   }
 

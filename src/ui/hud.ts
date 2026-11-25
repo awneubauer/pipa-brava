@@ -1,5 +1,9 @@
 import { TENSION } from '../config';
+import type { ModeId } from '../config';
+import type { BattleRules } from '../game/battle';
+import type { Camera } from '../game/camera';
 import type { Input } from '../game/input';
+import { goalText, type LevelDef } from '../game/levels';
 import type { Flyer } from '../physics/flyer';
 
 /** Cache de texto: só recria a string quando o número muda (evita alocação por quadro). */
@@ -23,7 +27,13 @@ class NumText {
 }
 
 export interface HudInfo {
-  mode: 'arcade' | 'sim';
+  mode: ModeId;
+  battle: BattleRules | null;
+  level: LevelDef | null;
+  cam: Camera;
+  flyers: Flyer[];
+  /** controle de um dedo (esconde o carretel) */
+  easy: boolean;
   player: Flyer;
   score: number;
   combo: number;
@@ -44,6 +54,13 @@ const F900_14 = '900 14px ' + FONT;
 const F900_17 = '900 17px ' + FONT;
 const F900_18 = '900 18px ' + FONT;
 const F900_30 = '900 30px ' + FONT;
+const F900_22 = '900 22px ' + FONT;
+const F900_15 = '900 15px ' + FONT;
+const F800_12 = '800 12px ' + FONT;
+const F800_10 = '800 10px ' + FONT;
+
+const GUIDE_DASH = [6, 8];
+const NO_DASH: number[] = [];
 
 export class Hud {
   private tAlt = new NumText('', ' m');
@@ -52,6 +69,12 @@ export class Hud {
   private tWind = new NumText('', ' km/h');
   private tCombo = new NumText('x', '');
   private tOpp = new NumText('', '');
+  private tProg = new NumText('', '');
+  private tTime = new NumText('', ' s');
+  private tCoins = new NumText('🪙 ', '');
+  private tWave = new NumText('ONDA ', '');
+  private goalLevel: LevelDef | null = null;
+  private goalStr = '';
   private reelAngle = 0;
   private lastSpin = 0;
   /** área do botão de pausa (px CSS) */
@@ -75,188 +98,196 @@ export class Hud {
     const top = 10 + this.safeTop;
     ctx.textBaseline = 'middle';
 
-    // ---------- faixa do carretel ----------
-    const rx = w - reelW;
-    ctx.fillStyle = 'rgba(20,12,40,0.28)';
-    ctx.beginPath();
-    ctx.roundRect(rx + 6, top + 106, reelW - 12, h - top - 122, 18);
-    ctx.fill();
-    const cx = rx + reelW / 2;
-    const cy = top + 106 + (h - top - 122) / 2;
-    this.reelAngle += (p.reel.spin - this.lastSpin) * 0.9 * Math.sign(p.reel.rate || 1);
-    this.lastSpin = p.reel.spin;
-    const rr = Math.min(reelW * 0.36, 34);
-    // carretel (lata com linha enrolada)
-    ctx.fillStyle = '#ffcf3f';
-    ctx.beginPath();
-    ctx.arc(cx, cy, rr, 0, Math.PI * 2);
-    ctx.fill();
-    const fill = 1 - p.reel.out / p.reel.stock;
-    ctx.fillStyle = p.lineType.color;
-    ctx.beginPath();
-    ctx.arc(cx, cy, rr * (0.45 + 0.5 * fill), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#7a4a10';
-    ctx.lineWidth = 3;
-    for (let i = 0; i < 3; i++) {
-      const a = this.reelAngle + (i * Math.PI * 2) / 3;
+    if (!info.easy) {
+      // ---------- faixa do carretel ----------
+      const rx = w - reelW;
+      ctx.fillStyle = 'rgba(20,12,40,0.28)';
       ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
-      ctx.stroke();
-    }
-    ctx.beginPath();
-    ctx.arc(cx, cy, rr, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.fillStyle = '#7a4a10';
-    ctx.beginPath();
-    ctx.arc(cx, cy, rr * 0.16, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.textAlign = 'center';
-    ctx.font = F800_11;
-    ctx.fillStyle = p.reel.rate < -0.5 ? '#ffe680' : 'rgba(255,255,255,0.85)';
-    ctx.fillText('▲', cx, top + 126);
-    ctx.fillText('PUXAR', cx, top + 142);
-    ctx.fillStyle = p.reel.rate > 0.5 ? '#ffe680' : 'rgba(255,255,255,0.85)';
-    ctx.fillText('SOLTAR', cx, h - 40);
-    ctx.fillText('▼', cx, h - 24);
-    if (input.reelTouch.active) {
-      ctx.fillStyle = 'rgba(255,255,255,0.25)';
-      ctx.beginPath();
-      ctx.arc(cx, input.reelTouch.sy, 24, 0, Math.PI * 2);
+      ctx.roundRect(rx + 6, top + 106, reelW - 12, h - top - 122, 18);
       ctx.fill();
-      ctx.fillStyle = 'rgba(255,230,120,0.9)';
+      const cx = rx + reelW / 2;
+      const cy = top + 106 + (h - top - 122) / 2;
+      this.reelAngle += (p.reel.spin - this.lastSpin) * 0.9 * Math.sign(p.reel.rate || 1);
+      this.lastSpin = p.reel.spin;
+      const rr = Math.min(reelW * 0.36, 34);
+      // carretel (lata com linha enrolada)
+      ctx.fillStyle = '#ffcf3f';
       ctx.beginPath();
-      ctx.arc(cx, input.reelTouch.y, 15, 0, Math.PI * 2);
+      ctx.arc(cx, cy, rr, 0, Math.PI * 2);
       ctx.fill();
-    }
-
-    // ---------- toque no céu ----------
-    if (input.sky.active) {
-      const s = input.sky;
-      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
-      ctx.lineWidth = 2;
+      const fill = 1 - p.reel.out / p.reel.stock;
+      ctx.fillStyle = p.lineType.color;
       ctx.beginPath();
-      ctx.arc(s.sx, s.sy, 34, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(s.sx, s.sy);
-      ctx.lineTo(s.x, s.y);
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(255,255,255,0.6)';
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, 12, 0, Math.PI * 2);
+      ctx.arc(cx, cy, rr * (0.45 + 0.5 * fill), 0, Math.PI * 2);
       ctx.fill();
-    }
-
-    // ---------- painel superior ----------
-    const panelW = w - reelW - 16;
-    ctx.fillStyle = 'rgba(20,12,40,0.38)';
-    ctx.beginPath();
-    ctx.roundRect(8, top, panelW, 62, 14);
-    ctx.fill();
-    ctx.textAlign = 'left';
-    ctx.font = F700_10;
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.fillText('ALTURA', 18, top + 13);
-    ctx.fillText('LINHA', 82, top + 13);
-    ctx.font = F900_17;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(this.tAlt.get(Math.max(0, p.kite.y - p.baseY + 1.3)), 18, top + 30);
-    const rem = p.reel.stock - p.reel.out;
-    ctx.fillStyle = rem < p.reel.stock * 0.08 ? '#ff6b6b' : '#ffffff';
-    ctx.fillText(this.tLine.get(rem), 82, top + 30);
-
-    // vento (vista de cima: para cima = soprando para dentro da tela)
-    const wx = 8 + panelW - 30;
-    const wy = top + 26;
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    ctx.beginPath();
-    ctx.arc(wx, wy, 19, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.save();
-    ctx.translate(wx, wy);
-    ctx.rotate(info.windAngle);
-    const len = 8 + Math.min(1, info.windSpeed / 10) * 7;
-    ctx.fillStyle = '#9ff3ff';
-    ctx.beginPath();
-    ctx.moveTo(0, -len);
-    ctx.lineTo(7, -len + 9);
-    ctx.lineTo(2.5, -len + 9);
-    ctx.lineTo(2.5, len);
-    ctx.lineTo(-2.5, len);
-    ctx.lineTo(-2.5, -len + 9);
-    ctx.lineTo(-7, -len + 9);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-    ctx.textAlign = 'center';
-    ctx.font = F700_9;
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.fillText(this.tWind.get(info.windSpeed * 3.6), wx, top + 54);
-    ctx.textAlign = 'left';
-    ctx.font = F700_10;
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.fillText('VENTO', wx - 66, top + 13);
-
-    // tensão
-    const bx = 18;
-    const by = top + 44;
-    const bw = panelW - 92;
-    const bh = 10;
-    const g0 = TENSION.greenMin;
-    const y0 = TENSION.yellow;
-    const r0 = TENSION.red;
-    ctx.fillStyle = 'rgba(255,255,255,0.18)';
-    ctx.fillRect(bx, by, bw * g0, bh);
-    ctx.fillStyle = '#2ed573';
-    ctx.fillRect(bx + bw * g0, by, bw * (y0 - g0), bh);
-    ctx.fillStyle = '#ffd400';
-    ctx.fillRect(bx + bw * y0, by, bw * (r0 - y0), bh);
-    ctx.fillStyle = '#ff3b3b';
-    ctx.fillRect(bx + bw * r0, by, bw * (1 - r0), bh);
-    const tv = Math.min(1, p.tension01);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(bx + bw * tv - 2, by - 4, 4, bh + 8);
-    ctx.font = F700_10;
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.fillText('TENSÃO', 150, top + 13);
-
-    // ---------- modo ----------
-    ctx.textAlign = 'center';
-    if (info.mode === 'arcade') {
-      ctx.font = F900_30;
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = 'rgba(30,10,40,0.7)';
-      const sx = (w - reelW) / 2;
-      ctx.strokeText(this.tScore.get(info.score), sx, top + 88);
-      ctx.fillStyle = '#ffe680';
-      ctx.fillText(this.tScore.get(info.score), sx, top + 88);
-      if (info.combo > 1 && info.comboTimer > 0) {
-        ctx.font = F900_18;
-        ctx.fillStyle = '#ff6bd6';
-        ctx.strokeText(this.tCombo.get(info.combo), sx, top + 114);
-        ctx.fillText(this.tCombo.get(info.combo), sx, top + 114);
+      ctx.strokeStyle = '#7a4a10';
+      ctx.lineWidth = 3;
+      for (let i = 0; i < 3; i++) {
+        const a = this.reelAngle + (i * Math.PI * 2) / 3;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+        ctx.stroke();
       }
-    } else {
-      // vida das linhas
-      const sx = 18;
-      let yy = top + 78;
-      ctx.textAlign = 'left';
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#7a4a10';
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.textAlign = 'center';
       ctx.font = F800_11;
-      this.lifeBar(ctx, sx, yy, 'Você', 1 - p.damage, p.status === 'flying' || p.status === 'snagged');
-      for (let i = 0; i < info.opponents.length; i++) {
-        yy += 18;
-        const o = info.opponents[i];
-        this.lifeBar(ctx, sx, yy, o.name, 1 - o.damage, o.status === 'flying' || o.status === 'snagged');
+      ctx.fillStyle = p.reel.rate < -0.5 ? '#ffe680' : 'rgba(255,255,255,0.85)';
+      ctx.fillText('▲', cx, top + 126);
+      ctx.fillText('PUXAR', cx, top + 142);
+      ctx.fillStyle = p.reel.rate > 0.5 ? '#ffe680' : 'rgba(255,255,255,0.85)';
+      ctx.fillText('SOLTAR', cx, h - 40);
+      ctx.fillText('▼', cx, h - 24);
+      if (input.reelTouch.active) {
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.beginPath();
+        ctx.arc(cx, input.reelTouch.sy, 24, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,230,120,0.9)';
+        ctx.beginPath();
+        ctx.arc(cx, input.reelTouch.y, 15, 0, Math.PI * 2);
+        ctx.fill();
       }
-      ctx.textAlign = 'right';
-      ctx.font = F900_14;
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(this.tOpp.get(info.aliveOpponents), w - reelW - 34, top + 82);
+    }
+
+    if (info.easy) this.drawFinger(ctx, input, info);
+    else {
+      // ---------- toque no céu ----------
+      if (input.sky.active) {
+        const s = input.sky;
+        ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(s.sx, s.sy, 34, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(s.sx, s.sy);
+        ctx.lineTo(s.x, s.y);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 12, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    if (info.battle) this.drawBattle(ctx, w, top, reelW, info);
+    else {
+      // ---------- painel superior ----------
+      const panelW = w - reelW - 16;
+      ctx.fillStyle = 'rgba(20,12,40,0.38)';
+      ctx.beginPath();
+      ctx.roundRect(8, top, panelW, 62, 14);
+      ctx.fill();
+      ctx.textAlign = 'left';
       ctx.font = F700_10;
-      ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      ctx.fillText('ADVERSÁRIOS', w - reelW - 50, top + 82);
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.fillText('ALTURA', 18, top + 13);
+      ctx.fillText('LINHA', 82, top + 13);
+      ctx.font = F900_17;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(this.tAlt.get(Math.max(0, p.kite.y - p.baseY + 1.3)), 18, top + 30);
+      const rem = p.reel.stock - p.reel.out;
+      ctx.fillStyle = rem < p.reel.stock * 0.08 ? '#ff6b6b' : '#ffffff';
+      ctx.fillText(this.tLine.get(rem), 82, top + 30);
+
+      // vento (vista de cima: para cima = soprando para dentro da tela)
+      const wx = 8 + panelW - 30;
+      const wy = top + 26;
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.beginPath();
+      ctx.arc(wx, wy, 19, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.save();
+      ctx.translate(wx, wy);
+      ctx.rotate(info.windAngle);
+      const len = 8 + Math.min(1, info.windSpeed / 10) * 7;
+      ctx.fillStyle = '#9ff3ff';
+      ctx.beginPath();
+      ctx.moveTo(0, -len);
+      ctx.lineTo(7, -len + 9);
+      ctx.lineTo(2.5, -len + 9);
+      ctx.lineTo(2.5, len);
+      ctx.lineTo(-2.5, len);
+      ctx.lineTo(-2.5, -len + 9);
+      ctx.lineTo(-7, -len + 9);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      ctx.textAlign = 'center';
+      ctx.font = F700_9;
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.fillText(this.tWind.get(info.windSpeed * 3.6), wx, top + 54);
+      ctx.textAlign = 'left';
+      ctx.font = F700_10;
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.fillText('VENTO', wx - 66, top + 13);
+
+      // tensão
+      const bx = 18;
+      const by = top + 44;
+      const bw = panelW - 92;
+      const bh = 10;
+      const g0 = TENSION.greenMin;
+      const y0 = TENSION.yellow;
+      const r0 = TENSION.red;
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.fillRect(bx, by, bw * g0, bh);
+      ctx.fillStyle = '#2ed573';
+      ctx.fillRect(bx + bw * g0, by, bw * (y0 - g0), bh);
+      ctx.fillStyle = '#ffd400';
+      ctx.fillRect(bx + bw * y0, by, bw * (r0 - y0), bh);
+      ctx.fillStyle = '#ff3b3b';
+      ctx.fillRect(bx + bw * r0, by, bw * (1 - r0), bh);
+      const tv = Math.min(1, p.tension01);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(bx + bw * tv - 2, by - 4, 4, bh + 8);
+      ctx.font = F700_10;
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.fillText('TENSÃO', 150, top + 13);
+
+      // ---------- modo ----------
+      ctx.textAlign = 'center';
+      if (info.mode === 'arcade') {
+        ctx.font = F900_30;
+        ctx.lineWidth = 5;
+        ctx.strokeStyle = 'rgba(30,10,40,0.7)';
+        const sx = (w - reelW) / 2;
+        ctx.strokeText(this.tScore.get(info.score), sx, top + 88);
+        ctx.fillStyle = '#ffe680';
+        ctx.fillText(this.tScore.get(info.score), sx, top + 88);
+        if (info.combo > 1 && info.comboTimer > 0) {
+          ctx.font = F900_18;
+          ctx.fillStyle = '#ff6bd6';
+          ctx.strokeText(this.tCombo.get(info.combo), sx, top + 114);
+          ctx.fillText(this.tCombo.get(info.combo), sx, top + 114);
+        }
+      } else {
+        // vida das linhas
+        const sx = 18;
+        let yy = top + 78;
+        ctx.textAlign = 'left';
+        ctx.font = F800_11;
+        this.lifeBar(ctx, sx, yy, 'Você', 1 - p.damage, p.status === 'flying' || p.status === 'snagged');
+        for (let i = 0; i < info.opponents.length; i++) {
+          yy += 18;
+          const o = info.opponents[i];
+          this.lifeBar(ctx, sx, yy, o.name, 1 - o.damage, o.status === 'flying' || o.status === 'snagged');
+        }
+        ctx.textAlign = 'right';
+        ctx.font = F900_14;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(this.tOpp.get(info.aliveOpponents), w - reelW - 34, top + 82);
+        ctx.font = F700_10;
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+        ctx.fillText('ADVERSÁRIOS', w - reelW - 50, top + 82);
+      }
     }
 
     // pausa
@@ -308,6 +339,159 @@ export class Hud {
       ctx.fillRect(8, h - 16 - lines.length * 14, 250, lines.length * 14 + 8);
       ctx.fillStyle = '#7CFF8A';
       for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], 14, h - 8 - (lines.length - i) * 14);
+    }
+  }
+
+  /** Modo fácil: anel no dedo e linha guia até a pipa. */
+  private drawFinger(ctx: CanvasRenderingContext2D, input: Input, info: HudInfo): void {
+    if (!input.sky.active) return;
+    const s = input.sky;
+    const k = info.player.kite;
+    const kx = info.cam.toScreenX(k.x);
+    const ky = info.cam.toScreenY(k.y);
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash(GUIDE_DASH);
+    ctx.beginPath();
+    ctx.moveTo(kx, ky);
+    ctx.lineTo(s.x, s.y);
+    ctx.stroke();
+    ctx.setLineDash(NO_DASH);
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 18, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,230,120,0.9)';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /** HUD da Batalha: objetivo, tempo, vida da linha, combo e barras dos inimigos. */
+  private drawBattle(ctx: CanvasRenderingContext2D, w: number, top: number, reelW: number, info: HudInfo): void {
+    const b = info.battle as BattleRules;
+    const st = b.stats;
+    const lv = info.level;
+    const p = info.player;
+    const panelW = w - reelW - 16;
+    // barras dos inimigos sobre as pipas
+    const fl = info.flyers;
+    ctx.textAlign = 'center';
+    for (let i = 1; i < fl.length; i++) {
+      const f = fl[i];
+      if (f.hidden || !(f.status === 'flying' || f.status === 'snagged')) continue;
+      const x = info.cam.toScreenX(f.kite.x);
+      const y = info.cam.toScreenY(f.kite.y) - 30 * f.visualScale - 6;
+      const bw = f.visualScale > 1 ? 70 : 44;
+      ctx.fillStyle = 'rgba(20,12,40,0.6)';
+      ctx.fillRect(x - bw / 2 - 2, y - 2, bw + 4, 8);
+      const life = Math.max(0, 1 - f.damage);
+      ctx.fillStyle = life > 0.6 ? '#ff4d6d' : life > 0.3 ? '#ff8a00' : '#ffd400';
+      ctx.fillRect(x - bw / 2, y, bw * life, 4);
+      ctx.font = F800_10;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(f.name, x, y - 7);
+    }
+    // painel
+    ctx.fillStyle = 'rgba(20,12,40,0.5)';
+    ctx.beginPath();
+    ctx.roundRect(8, top, panelW, 76, 14);
+    ctx.fill();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    if (lv) {
+      if (this.goalLevel !== lv) {
+        this.goalLevel = lv;
+        this.goalStr = 'FASE ' + lv.n + ' · ' + goalText(lv);
+      }
+      ctx.font = F800_12;
+      ctx.fillStyle = '#ffe680';
+      ctx.fillText(this.goalStr, 18, top + 14);
+      // progresso
+      let prog = 0;
+      if (lv.goal === 'cut') prog = st.cuts / lv.target;
+      else if (lv.goal === 'combo') prog = Math.max(b.combo, st.bestCombo) / lv.target;
+      else if (lv.goal === 'survive') prog = st.time / lv.target;
+      else prog = b.bossDown ? 1 : 0;
+      ctx.font = F900_22;
+      ctx.fillStyle = '#ffffff';
+      const txt =
+        lv.goal === 'cut'
+          ? this.tProg.get(st.cuts) + '/' + lv.target
+          : lv.goal === 'combo'
+            ? 'x' + Math.max(b.combo, 1)
+            : lv.goal === 'survive'
+              ? this.tTime.get(Math.max(0, lv.target - st.time))
+              : '';
+      ctx.fillText(txt, 18, top + 38);
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.fillRect(100, top + 33, panelW - 110, 10);
+      ctx.fillStyle = '#7dff5a';
+      ctx.fillRect(100, top + 33, (panelW - 110) * Math.min(1, prog), 10);
+      if (lv.time > 0 && lv.goal !== 'survive') {
+        const left = Math.max(0, lv.time - st.time);
+        ctx.font = F800_10;
+        ctx.fillStyle = left < 10 ? '#ff6b6b' : 'rgba(255,255,255,0.8)';
+        ctx.textAlign = 'right';
+        ctx.fillText(this.tTime.get(left), panelW, top + 14);
+        ctx.textAlign = 'left';
+      }
+    } else {
+      ctx.font = F800_12;
+      ctx.fillStyle = '#ffe680';
+      ctx.fillText(this.tWave.get(st.wave), 18, top + 14);
+      ctx.font = F900_22;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(this.tScore.get(st.score), 18, top + 38);
+      ctx.textAlign = 'right';
+      ctx.font = F900_15;
+      ctx.fillStyle = '#ffd400';
+      ctx.fillText(this.tCoins.get(st.coins), panelW, top + 38);
+      ctx.textAlign = 'left';
+    }
+    // vida da linha
+    ctx.font = F800_10;
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillText('SUA LINHA', 18, top + 62);
+    const life = Math.max(0, 1 - p.damage);
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fillRect(80, top + 57, panelW - 90, 10);
+    ctx.fillStyle = life > 0.6 ? '#2ed573' : life > 0.3 ? '#ffd400' : '#ff3b3b';
+    ctx.fillRect(80, top + 57, (panelW - 90) * life, 10);
+    // combo e puxão
+    ctx.textAlign = 'center';
+    if (b.combo > 1 && b.comboTimer > 0) {
+      ctx.font = F900_30;
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = 'rgba(30,10,40,0.7)';
+      const cx = (w - reelW) / 2;
+      const s = this.tCombo.get(b.combo);
+      ctx.strokeText(s, cx, top + 104);
+      ctx.fillStyle = '#ff6bd6';
+      ctx.fillText(s, cx, top + 104);
+      ctx.fillStyle = 'rgba(255,107,214,0.8)';
+      ctx.fillRect(cx - 30, top + 122, 60 * Math.min(1, b.comboTimer / 6), 4);
+    }
+    if (b.boost > 0) {
+      ctx.font = F900_15;
+      ctx.fillStyle = '#ffd400';
+      ctx.fillText('PUXÃO!', info.cam.toScreenX(p.kite.x), info.cam.toScreenY(p.kite.y) + 34);
+    }
+    // dica nos primeiros segundos
+    if (st.time < 6 && info.easy) {
+      ctx.globalAlpha = Math.min(1, (6 - st.time) / 1.5);
+      ctx.fillStyle = 'rgba(20,12,40,0.6)';
+      const hw = Math.min(w - 24, 330);
+      ctx.beginPath();
+      ctx.roundRect((w - hw) / 2, info.cam.h - 96, hw, 50, 14);
+      ctx.fill();
+      ctx.font = F800_12;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('Arraste o dedo: a pipa vai atrás', w / 2, info.cam.h - 80);
+      ctx.fillStyle = '#ffe680';
+      ctx.fillText('Cruze a linha das outras • Toque = PUXÃO', w / 2, info.cam.h - 61);
+      ctx.globalAlpha = 1;
     }
   }
 

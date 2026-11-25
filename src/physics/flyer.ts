@@ -1,4 +1,4 @@
-import { HAZARD, KITE, PHYSICS, TENSION, type KiteParams, type LineType } from '../config';
+import { ASSIST, HAZARD, KITE, PHYSICS, TENSION, type KiteParams, type LineType } from '../config';
 import { clamp, wrapAngle } from '../util/noise';
 import { collide, createContact, type Hazard } from './hazards';
 import { computeAero, createAero, createKiteBody, integrateKite, steerTorque, type KiteBody } from './kite';
@@ -19,6 +19,13 @@ export interface FlyerControl {
   reel: number;
   /** pedido de puxão (consumido no passo) */
   jerk: boolean;
+  /**
+   * Ajuda de pilotagem do modo fácil (0 = desligada): a "mão" do jogador guia a pipa
+   * até (assistX, assistY) — ajuste de jogabilidade por cima da física.
+   */
+  assist: number;
+  assistX: number;
+  assistY: number;
 }
 
 export type WorldEventType =
@@ -86,8 +93,16 @@ export interface Flyer {
   airspeed: number;
   alpha: number;
   swayPhase: number;
+  /** fora de jogo (vaga de inimigo vazia): não desenha nem colide */
+  hidden: boolean;
+  /** multiplicador do dano recebido em cruzamentos (puxão/escudo do modo Batalha) */
+  damageTaken: number;
+  /** multiplicador da afiação (puxão do modo Batalha) */
+  sharpMul: number;
+  /** tamanho visual (chefão é maior) */
+  visualScale: number;
   /** cor/modelo (visual) */
-  look: { model: string; color: string; tail: string };
+  look: { model: string; color: string; tail: string; fx?: string };
 }
 
 const aero = createAero();
@@ -123,7 +138,7 @@ export function createFlyer(
     handVX: 0,
     handVY: 0,
     handVZ: 0,
-    ctrl: { steer: 0, handX: 0, handY: 0, reel: 0, jerk: false },
+    ctrl: { steer: 0, handX: 0, handY: 0, reel: 0, jerk: false, assist: 0, assistX: 0, assistY: 0 },
     steer: 0,
     jerkTimer: 0,
     tension: 0,
@@ -148,6 +163,10 @@ export function createFlyer(
     airspeed: 0,
     alpha: 0,
     swayPhase: index * 1.7,
+    hidden: false,
+    damageTaken: 1,
+    sharpMul: 1,
+    visualScale: 1,
     look,
   };
   launchFlyer(f);
@@ -190,6 +209,7 @@ export function severLine(f: Flyer, seg: number, status: FlyerStatus): void {
 
 /** Um subpasso de física para uma pipa. */
 export function stepFlyer(f: Flyer, env: FlyerEnv, dt: number): void {
+  if (f.hidden) return;
   const k = f.kite;
   const p = f.params;
   f.statusTimer += dt;
@@ -325,7 +345,24 @@ export function stepFlyer(f: Flyer, env: FlyerEnv, dt: number): void {
       }
     } else {
       const prevOmega = k.omega;
-      integrateKite(k, p, fx * imp, fy * imp, fz * imp, torque, dt);
+      let ax = 0;
+      let ay = 0;
+      const as = f.ctrl.assist;
+      if (as > 0) {
+        // guia até o dedo: velocidade desejada na tela, com inércia (não é teleporte)
+        const dx = f.ctrl.assistX - k.x;
+        const dy = f.ctrl.assistY - k.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+        const sp = Math.min(ASSIST.maxSpeed, dist * ASSIST.approach);
+        const vdx = (dx / dist) * sp;
+        const vdy = (dy / dist) * sp;
+        ax = (vdx - k.vx) * ASSIST.gain * as * p.mass;
+        ay = (vdy - k.vy) * ASSIST.gain * as * p.mass;
+        // o bico acompanha o movimento (a rabiola alinha)
+        const v2 = k.vx * k.vx + k.vy * k.vy;
+        if (v2 > 4) torque += wrapAngle(Math.atan2(k.vy, k.vx) - k.angle) * 0.35 * as - k.omega * 0.06 * as;
+      }
+      integrateKite(k, p, fx * imp + ax, fy * imp + ay, fz * imp, torque, dt);
       // limites de segurança (nunca devem ser atingidos em jogo normal)
       const sp2 = k.vx * k.vx + k.vy * k.vy + k.vz * k.vz;
       if (sp2 > 3600) {

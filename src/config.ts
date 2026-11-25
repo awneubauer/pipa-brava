@@ -90,12 +90,24 @@ export const KITE: KiteParams = {
   radius: 0.45,
 };
 
-export type ModeId = 'arcade' | 'sim';
+export type ModeId = 'arcade' | 'sim' | 'battle';
 
 export const MODES = {
   arcade: { stock: 1200, lineBreaks: false, hazardsLethal: false },
   sim: { stock: 800, lineBreaks: true, hazardsLethal: true },
+  /** Batalha no Céu (modo principal): ondas de pipas, perigos só quicam, linha não arrebenta */
+  battle: { stock: 1500, lineBreaks: false, hazardsLethal: false },
 } as const;
+
+/** Ajuda de pilotagem do controle fácil (um dedo). */
+export const ASSIST = {
+  /** velocidade máxima guiada (m/s) */
+  maxSpeed: 20,
+  /** velocidade desejada por metro de distância ao dedo (1/s) */
+  approach: 3,
+  /** quão rápido a velocidade alcança a desejada (1/s) */
+  gain: 10,
+};
 
 export const REEL = {
   /** Soltar: até 420 u/s. */

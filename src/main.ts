@@ -9,7 +9,7 @@ import './style.css';
 document.title = GAME_TITLE;
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
-let last: { mode: ModeId; scene: SceneId } = { mode: 'arcade', scene: 'varzea' };
+let last: { mode: ModeId; scene: SceneId; level: number } = { mode: 'arcade', scene: 'varzea', level: -1 };
 
 function pauseGame(): void {
   if (!game.world || game.paused) return;
@@ -33,14 +33,22 @@ const tutorial = new Tutorial(game.input, () => {
 });
 
 function play(mode: ModeId, scene: SceneId): void {
-  last = { mode, scene };
+  last = { mode, scene, level: -1 };
   menu.hide();
   game.start(mode, scene);
-  if (!game.save.settings.tutorialDone) tutorial.start();
+  if (!game.save.settings.tutorialDone && game.save.settings.control === 'pro') tutorial.start();
+}
+
+function playLevel(n: number): void {
+  last = { mode: 'battle', scene: 'varzea', level: n };
+  menu.hide();
+  tutorial.stop();
+  game.startLevel(n);
 }
 
 const menu = new Menu(() => game.save, {
   play,
+  playLevel,
   resume: () => {
     menu.hide();
     game.resume();
@@ -48,7 +56,8 @@ const menu = new Menu(() => game.save, {
   },
   restart: () => {
     tutorial.stop();
-    play(last.mode, last.scene);
+    if (last.level >= 0) playLevel(last.level);
+    else play(last.mode, last.scene);
   },
   quit: () => {
     tutorial.stop();

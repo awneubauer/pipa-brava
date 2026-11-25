@@ -12,6 +12,8 @@ import {
   type ModeId,
 } from '../config';
 import { drawKiteShape, shade } from '../render/kiteArt';
+import { LEVELS, goalText, isUnlocked } from '../game/levels';
+import { SKINS, getSkin } from '../game/skins';
 import type { GameResult } from '../game/game';
 import type { SaveData } from '../game/state';
 import { bestKey, writeSave } from '../game/state';
@@ -20,6 +22,8 @@ import type { SceneId } from '../scenes/types';
 
 export interface MenuHooks {
   play: (mode: ModeId, scene: SceneId) => void;
+  /** fase da campanha (1..30) ou 0 = Infinito */
+  playLevel: (n: number) => void;
   resume: () => void;
   restart: () => void;
   quit: () => void;
@@ -32,6 +36,10 @@ export interface MenuHooks {
 
 function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string);
+}
+
+function stars3(n: number): string {
+  return stars(n);
 }
 
 function stars(n: number): string {
@@ -65,7 +73,102 @@ export class Menu {
     this.root.classList.add('show');
   }
 
+  /** Tela principal: botão de jogar a próxima fase, mapa de fases, moedas e loja. */
   home(): void {
+    const d = this.save();
+    const prof = d.profile;
+    const total = prof.stars.reduce((a, b) => a + (b || 0), 0);
+    let next = 1;
+    for (let n = 1; n <= LEVELS.length; n++) {
+      if (isUnlocked(prof.stars, n)) next = n;
+      if (isUnlocked(prof.stars, n) && !(prof.stars[n - 1] > 0)) {
+        next = n;
+        break;
+      }
+    }
+    const sceneNames: Record<string, string> = { varzea: 'Várzea', favela: 'Favela', centroSP: 'Centro de SP', rio: 'Rio' };
+    let map = '';
+    let cur = '';
+    for (const lv of LEVELS) {
+      if (lv.scene !== cur) {
+        if (cur) map += '</div>';
+        cur = lv.scene;
+        map += `<h3>${sceneNames[cur]}</h3><div class="levels">`;
+      }
+      const st = prof.stars[lv.n - 1] ?? 0;
+      const open = isUnlocked(prof.stars, lv.n);
+      const stars = open && st > 0 ? '★'.repeat(st) + '☆'.repeat(3 - st) : open ? '☆☆☆' : '🔒';
+      map += `<button class="lvl ${open ? '' : 'locked'} ${lv.n === next ? 'next' : ''} ${lv.goal === 'boss' ? 'boss' : ''}" data-level="${lv.n}" ${open ? '' : 'disabled'}><b>${lv.goal === 'boss' ? '👑' : lv.n}</b><small>${stars}</small></button>`;
+    }
+    map += '</div>';
+    const nl = LEVELS[next - 1];
+    this.show(`<div class="panel home">
+      <div class="topbar"><span class="pill">🪙 ${prof.coins.toLocaleString('pt-BR')}</span><span class="pill">★ ${total}/${LEVELS.length * 3}</span></div>
+      <h1 class="logo">${esc(GAME_TITLE)}</h1>
+      <button class="big play pulse" data-level="${next}">JOGAR · Fase ${next}<small>${esc(goalText(nl))}</small></button>
+      <div class="row">
+        <button class="small hot" data-level="0">♾️ Infinito${prof.bestEndless ? ' · ' + prof.bestEndless.toLocaleString('pt-BR') : ''}</button>
+        <button class="small hot" data-action="shop">🛍️ Loja</button>
+      </div>
+      <div class="map">${map}</div>
+      <div class="row">
+        <button class="small" data-action="free">Modo livre</button>
+        <button class="small" data-action="help">Como jogar</button>
+        ${this.controlBtn()}
+        ${this.soundBtn()}
+      </div>
+    </div>`);
+    const el = this.root.querySelector('.lvl.next');
+    el?.scrollIntoView({ block: 'nearest' });
+  }
+
+  private controlBtn(): string {
+    const easy = this.save().settings.control !== 'pro';
+    return `<button class="small" data-action="control">${easy ? '👆 Controle: fácil' : '🎛️ Controle: pro'}</button>`;
+  }
+
+  /** Loja de skins. */
+  shop(): void {
+    const d = this.save();
+    const prof = d.profile;
+    const cards = SKINS.map((sk) => {
+      const owned = prof.owned.includes(sk.id);
+      const using = d.settings.skin === sk.id;
+      const label = using ? 'Em uso' : owned ? 'Usar' : `🪙 ${sk.price}`;
+      const can = owned || prof.coins >= sk.price;
+      return `<button class="model skin ${using ? 'sel' : ''}" data-skin="${sk.id}" ${can ? '' : 'disabled'}>
+        <canvas width="64" height="64" data-skinprev="${sk.id}"></canvas>${esc(sk.name)}<em>${label}</em></button>`;
+    }).join('');
+    this.show(`<div class="panel custom">
+      <div class="topbar"><span class="pill">🪙 ${prof.coins.toLocaleString('pt-BR')}</span></div>
+      <h2>Loja de pipas</h2>
+      <p class="muted">Ganhe moedas cortando pipas e completando fases.</p>
+      <div class="models">${cards}</div>
+      <button class="big" data-action="home">Voltar</button>
+    </div>`);
+    this.root.querySelectorAll<HTMLCanvasElement>('canvas[data-skinprev]').forEach((c) => {
+      const sk = getSkin(c.dataset.skinprev ?? '');
+      const g = c.getContext('2d');
+      if (!g) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      c.width = 64 * dpr;
+      c.height = 64 * dpr;
+      c.style.width = '64px';
+      c.style.height = '64px';
+      g.scale(dpr, dpr);
+      if (sk.fx) {
+        g.fillStyle = sk.fx === 'fire' ? 'rgba(255,106,0,0.35)' : sk.fx === 'rainbow' ? 'rgba(160,120,255,0.3)' : 'rgba(255,242,160,0.4)';
+        g.beginPath();
+        g.arc(32, 32, 30, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.translate(32, 32);
+      drawKiteShape(g, sk.model, 22, sk.color, sk.tail === sk.color ? '#ffffff' : sk.tail);
+    });
+  }
+
+  /** Modos extras (Arcade livre e Simulação clássica). */
+  free(): void {
     const s = this.save().settings;
     const cards = SCENES.map((sc) => {
       const best = this.save().best[bestKey(this.mode, sc.id)];
@@ -76,8 +179,7 @@ export class Menu {
       </button>`;
     }).join('');
     this.show(`<div class="panel home">
-      <h1 class="logo">${esc(GAME_TITLE)}</h1>
-      <p class="sub">Solte o carretel, sinta o vento.</p>
+      <h2>Modo livre</h2>
       <div class="modes">
         <button class="mode ${this.mode === 'arcade' ? 'sel' : ''}" data-mode="arcade"><b>Arcade</b><small>Manobras, combos e estrelas. Sem perigo.</small></button>
         <button class="mode ${this.mode === 'sim' ? 'sel' : ''}" data-mode="sim"><b>Simulação</b><small>Corte a linha dos adversários.</small></button>
@@ -87,9 +189,8 @@ export class Menu {
       <div class="scenes">${cards}</div>
       <button class="big play" data-action="play">Soltar pipa!</button>
       <div class="row">
-        <button class="small" data-action="custom">Personalizar pipa</button>
-        <button class="small" data-action="help">Como jogar</button>
-        ${this.soundBtn()}
+        <button class="small" data-action="custom">Cores do modo livre</button>
+        <button class="small" data-action="home">Voltar</button>
       </div>
     </div>`);
   }
@@ -220,6 +321,10 @@ export class Menu {
   }
 
   summary(r: GameResult): void {
+    if (r.battle) {
+      this.battleSummary(r);
+      return;
+    }
     if (r.sim) {
       this.simSummary(r);
       return;
@@ -240,6 +345,49 @@ export class Menu {
       </ul>
       <button class="big play" data-action="restart">Jogar de novo</button>
       <button class="big alt" data-action="home">Menu</button>
+    </div>`);
+  }
+
+  private battleSummary(r: GameResult): void {
+    const b = r.battle!;
+    const prof = this.save().profile;
+    if (b.level === 0) {
+      this.show(`<div class="panel summary">
+        <p class="result-title ${b.newBest ? 'win' : ''}">${b.newBest ? 'NOVO RECORDE!' : 'Fim da batalha'}</p>
+        <p class="score">${b.score.toLocaleString('pt-BR')} pontos</p>
+        <p class="muted">Recorde: ${prof.bestEndless.toLocaleString('pt-BR')}</p>
+        <ul class="stats">
+          <li><span>Onda</span><b>${b.wave}</b></li>
+          <li><span>Pipas cortadas</span><b>${b.cuts}</b></li>
+          <li><span>Maior combo</span><b>x${Math.max(1, b.bestCombo)}</b></li>
+          <li><span>Moedas</span><b class="coins">+${b.coins} 🪙</b></li>
+        </ul>
+        <button class="big play" data-level="0">Jogar de novo</button>
+        <button class="big alt" data-action="home">Menu</button>
+      </div>`);
+      return;
+    }
+    const lv = LEVELS[b.level - 1];
+    const next = LEVELS[b.level];
+    const stars = b.success ? stars3(b.stars) : stars3(0);
+    this.show(`<div class="panel summary">
+      <p class="muted">Fase ${b.level}</p>
+      <p class="result-title ${b.success ? 'win' : 'lose'}">${b.success ? 'FASE COMPLETA!' : 'Quase!'}</p>
+      <div class="stars">${stars}</div>
+      <p class="muted">${esc(b.success ? goalText(lv) : b.nearMiss || b.reason)}</p>
+      ${b.success && b.stars < 3 ? `<p class="hint">${b.stars === 1 ? 'Mais rápido e sem levar dano = 3 estrelas' : 'Falta uma estrela: ' + (lv.goal === 'survive' ? 'corte 2 pipas ou não leve dano' : 'seja mais rápido ou não leve dano')}</p>` : ''}
+      <ul class="stats">
+        <li><span>Pipas cortadas</span><b>${b.cuts}</b></li>
+        <li><span>Pontos</span><b>${b.score.toLocaleString('pt-BR')}</b></li>
+        <li><span>Moedas</span><b class="coins">+${b.coins} 🪙</b></li>
+      </ul>
+      ${
+        b.success && next
+          ? `<button class="big play pulse" data-level="${next.n}">Próxima fase ▶<small>${esc(goalText(next))}</small></button>
+             <button class="big alt" data-level="${b.level}">Jogar de novo</button>`
+          : `<button class="big play pulse" data-level="${b.level}">Tentar de novo</button>`
+      }
+      <button class="big alt" data-action="home">Mapa de fases</button>
     </div>`);
   }
 
@@ -272,12 +420,31 @@ export class Menu {
     const t = (e.target as HTMLElement).closest('button');
     if (!t) return;
     const data = this.save();
+    const lvl = t.getAttribute('data-level');
+    if (lvl !== null) {
+      this.hooks.playLevel(Number(lvl));
+      return;
+    }
+    const skin = t.getAttribute('data-skin');
+    if (skin) {
+      const sk = getSkin(skin);
+      const prof = data.profile;
+      if (!prof.owned.includes(sk.id)) {
+        if (prof.coins < sk.price) return;
+        prof.coins -= sk.price;
+        prof.owned.push(sk.id);
+      }
+      data.settings.skin = sk.id;
+      writeSave(data);
+      this.shop();
+      return;
+    }
     const sc = t.getAttribute('data-scene');
     if (sc) {
       data.settings.scene = sc as SceneId;
       writeSave(data);
       this.hooks.sceneChanged?.(sc as SceneId);
-      this.home();
+      this.free();
       return;
     }
     const model = t.getAttribute('data-model');
@@ -305,27 +472,27 @@ export class Menu {
     if (opp) {
       data.settings.opponents = Number(opp);
       writeSave(data);
-      this.home();
+      this.free();
       return;
     }
     const diff = t.getAttribute('data-diff');
     if (diff) {
       data.settings.difficulty = diff as DifficultyId;
       writeSave(data);
-      this.home();
+      this.free();
       return;
     }
     const ln = t.getAttribute('data-line');
     if (ln) {
       if (data.settings.unlocked.includes(ln as LineTypeId)) data.settings.playerLine = ln as LineTypeId;
       writeSave(data);
-      this.home();
+      this.free();
       return;
     }
     const md = t.getAttribute('data-mode');
     if (md) {
       this.mode = md as ModeId;
-      this.home();
+      this.free();
       return;
     }
     switch (t.getAttribute('data-action')) {
@@ -334,6 +501,17 @@ export class Menu {
         break;
       case 'help':
         this.help();
+        break;
+      case 'shop':
+        this.shop();
+        break;
+      case 'free':
+        this.free();
+        break;
+      case 'control':
+        data.settings.control = data.settings.control === 'pro' ? 'easy' : 'pro';
+        writeSave(data);
+        t.outerHTML = this.controlBtn();
         break;
       case 'custom':
         this.custom();

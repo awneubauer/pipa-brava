@@ -8,6 +8,10 @@ export interface ControlState {
   handY: number;
   reel: number;
   jerk: boolean;
+  /** modo fácil: vetor do "joystick" (px, y para cima) e se está ativo */
+  joyX: number;
+  joyY: number;
+  joy: boolean;
 }
 
 interface TouchTrack {
@@ -24,6 +28,9 @@ interface TouchTrack {
   prevY: number;
   /** velocidade suavizada do dedo (px/s) */
   spd: number;
+  /** início do toque (ms), para detectar o toque rápido */
+  t0: number;
+  moved: number;
 }
 
 const SKY_STEER_PX = 78;
@@ -37,7 +44,9 @@ const MAX_TRACKS = 6;
  * Desktop: mouse no céu, W/S ou roda = carretel, espaço = puxão, A/D = curva.
  */
 export class Input {
-  readonly state: ControlState = { steer: 0, handX: 0, handY: 0, reel: 0, jerk: false };
+  readonly state: ControlState = { steer: 0, handX: 0, handY: 0, reel: 0, jerk: false, joyX: 0, joyY: 0, joy: false };
+  /** 'easy': um dedo guia a pipa (joystick no céu, toque = puxão); 'pro': cabresto + lata */
+  mode: 'easy' | 'pro' = 'easy';
   /** largura da faixa do carretel (px CSS) */
   reelWidth = 80;
   enabled = true;
@@ -65,7 +74,7 @@ export class Input {
 
   constructor(private el: HTMLElement) {
     for (let i = 0; i < MAX_TRACKS; i++)
-      this.tracks.push({ id: -1, zone: 'sky', sx: 0, sy: 0, x: 0, y: 0, lastY: 0, lastT: 0, vy: 0, prevY: 0, spd: 0 });
+      this.tracks.push({ id: -1, zone: 'sky', sx: 0, sy: 0, x: 0, y: 0, lastY: 0, lastT: 0, vy: 0, prevY: 0, spd: 0, t0: 0, moved: 0 });
     el.addEventListener('pointerdown', this.down, { passive: false });
     window.addEventListener('pointermove', this.move, { passive: false });
     window.addEventListener('pointerup', this.up);
@@ -113,7 +122,9 @@ export class Input {
     const t = this.findTrack(-1);
     if (!t) return;
     t.id = e.pointerId;
-    t.zone = x > this.w - this.reelWidth ? 'reel' : 'sky';
+    t.zone = this.mode === 'pro' && x > this.w - this.reelWidth ? 'reel' : 'sky';
+    t.t0 = performance.now();
+    t.moved = 0;
     // só uma mão em cada zona
     for (const o of this.tracks) if (o !== t && o.id !== -1 && o.zone === t.zone) o.id = -1;
     t.sx = t.x = x;
@@ -144,6 +155,8 @@ export class Input {
     t.lastT = now;
     t.x = e.clientX;
     t.y = e.clientY;
+    const m = Math.hypot(t.x - t.sx, t.y - t.sy);
+    if (m > t.moved) t.moved = m;
   };
 
   private up = (e: PointerEvent): void => {
@@ -151,6 +164,8 @@ export class Input {
     if (!t) return;
     // largou a lata girando para soltar: ela continua girando (a pipa puxa a linha)
     if (t.zone === 'reel' && this.reelCmd > 0.08) this.spool = this.reelCmd;
+    // modo fácil: toque rápido = puxão
+    if (this.mode === 'easy' && t.zone === 'sky' && t.moved < 16 && performance.now() - t.t0 < 260) this.requestJerk();
     t.id = -1;
   };
 
@@ -192,13 +207,26 @@ export class Input {
     let handX = 0;
     let handY = 0;
     let reel = 0;
+    let joy = false;
     this.sky.active = false;
     this.reelTouch.active = false;
     if (this.enabled) {
       for (let ti = 0; ti < this.tracks.length; ti++) {
         const t = this.tracks[ti];
         if (t.id === -1) continue;
-        if (t.zone === 'sky') {
+        if (t.zone === 'sky' && this.mode === 'easy') {
+          // joystick relativo: a direção do arrasto é para onde a pipa vai
+          s.joyX = t.x - t.sx;
+          s.joyY = -(t.y - t.sy);
+          joy = Math.hypot(s.joyX, s.joyY) > 14;
+          this.sky.active = true;
+          this.sky.sx = t.sx;
+          this.sky.sy = t.sy;
+          this.sky.x = t.x;
+          this.sky.y = t.y;
+          if (joy) this.usedSteer += dt;
+          if (joy && s.joyY > 30) this.usedReel += dt;
+        } else if (t.zone === 'sky') {
           const dx = t.x - t.sx;
           const dy = t.y - t.sy;
           steer = clamp(dx / SKY_STEER_PX, -1, 1);
@@ -257,6 +285,21 @@ export class Input {
         if (this.wheel > 0.1) this.usedReel += dt;
         this.wheel *= Math.exp(-dt * 3);
       } else this.wheel = 0;
+    }
+    s.joy = joy;
+    if (!joy) {
+      s.joyX = 0;
+      s.joyY = 0;
+    }
+    // teclado no modo fácil vira joystick
+    if (this.mode === 'easy' && !joy && steer !== 0) {
+      s.joy = true;
+      s.joyX = steer * 80;
+    }
+    if (this.mode === 'easy' && !joy && reel !== 0 && this.keys.size > 0) {
+      s.joy = true;
+      s.joyY = reel > 0 ? -80 : 80;
+      if (steer !== 0) s.joyX = steer * 80;
     }
     s.steer = steer;
     s.handX = handX;

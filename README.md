@@ -4,8 +4,9 @@ Jogo de soltar pipa para celular (retrato, tela cheia) e desktop, feito com **Vi
 
 > O título é provisório e fica em uma única constante: `GAME_TITLE` em `src/config.ts` (o `<title>` e o manifest do PWA são gerados a partir dela).
 
-- **Arcade** (para crianças): sem cortes e sem derrota, manobras com combos e estrelas (loop, rasante, zigue-zague, recorde de altura, pairar na rajada), pipa e rabiola personalizáveis.
-- **Simulação**: você contra 1, 2 ou 3 pipas da IA (Fácil, Média, Brava). Corte a linha delas sem ter a sua cortada, sem queimar no fio e sem arrebentar a linha de tanta tensão.
+- **Batalha no Céu (modo principal)**: 30 fases curtas (30–90 s), cada uma com um objetivo claro (cortar pipas, cortar em tempo, sobreviver, fazer combo, derrubar o chefão) e 1–3 estrelas. Cortes rendem pontos com combo e moedas; as moedas compram skins na Loja. Há também o modo **Infinito**, em ondas cada vez mais bravas, valendo recorde.
+- **Controle de um dedo**: arraste e a pipa vai atrás do dedo (com balanço e inércia); o carretel é automático; toque rápido = puxão (a linha corta mais por um instante).
+- **Modo livre**: Arcade (manobras, sem perigo) e Simulação clássica (1–3 adversários, perigos letais, tensão que arrebenta). O controle Pro (cabresto + lata) pode ser ligado no menu.
 - **4 cenários**: Favela no morro, Campo de várzea, Centro de São Paulo e Rio de Janeiro, cada um com vento e perigos próprios.
 
 ## Como rodar
@@ -116,8 +117,19 @@ tests/                   testes Vitest
 - `tests/longrun.test.ts` — (b) 10 minutos simulados com comandos aleatórios sem NaN nem explosão da linha.
 - `tests/reel.test.ts` — (d) estoque do carretel nunca negativo nem acima do limite.
 - `tests/maneuvers.test.ts` — manobras do arcade detectadas.
+- `tests/battle.test.ts` — 30 fases com 4 chefões, regras de estrelas e liberação, fases 1 e 2 vencíveis por um jogador simples, controle fácil alcança o dedo em menos de 3 s.
 - `tests/scenes.test.ts` — os 4 cenários rodam 60 s com 3 adversários sem NaN; fio queima na Simulação e só quica no Arcade.
 - `tests/cut.test.ts` — (c) cruzamento entre linhas iguais resolve em 1,5–4 s de deslizamento (lateral, puxando e soltando; 2–4 m/s; tensões 0,4–0,6) e partida completa contra a IA.
+
+## Gamificação (Batalha no Céu)
+
+- **Loop curto**: cada fase é rápida e termina com estrelas, moedas e um botão grande de **Próxima fase**. Se perder, a tela diz quanto faltou ("Faltou só 1 pipa!") para dar vontade de tentar de novo.
+- **Estrelas**: 1 por cumprir o objetivo, +1 por rapidez (ou, em "sobreviva", por cortar 2 pipas), +1 por terminar com a linha quase inteira. Uma estrela libera a próxima fase. A cada 10 estrelas o multiplicador de pontos sobe.
+- **Curva de dificuldade** (`src/game/levels.ts`): 30 fases nos 4 cenários (Várzea 1–8, Favela 9–16, Centro 17–24, Rio 25–30). A força da IA, a afiação das linhas inimigas e quantas pipas voam juntas sobem aos poucos; o fim de cada cenário tem o chefão **Rei do Céu** (maior, mais resistente e mais esperto). A fase 1 é quase impossível de perder.
+- **Moedas e Loja** (`src/game/skins.ts`): moedas por corte (mais em combo), bônus por estrela nova e por fase completada pela primeira vez. Dez skins, até as especiais com rabiola arco-íris, brilho ou fogo.
+- **Ajustes da Batalha para ser fácil e rápida**: dano ×1,8 (cortes em ~1–2 s de cruzamento bem feito), a linha meio frouxa ainda corta, a sua linha aguenta mais (recebe 55% do dano) e o puxão dobra a afiação por 0,6 s. Os perigos do cenário só quicam e a linha não arrebenta por tensão.
+- **Controle fácil** (`src/game/autopilot.ts`): o dedo vira um alvo no céu; o cabresto aponta o bico para lá, uma ajuda de pilotagem leva a pipa até o dedo com inércia (até 20 m/s) e o carretel solta ou recolhe sozinho para alcançar o ponto (dedo alto = mais linha). Sem dedo, a pipa se endireita e sobe.
+- **Salvamento**: moedas, estrelas, skins e recorde do Infinito ficam no `localStorage`.
 
 ## Revisão de jogabilidade (carretel e manobra)
 

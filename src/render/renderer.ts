@@ -288,12 +288,12 @@ export class Renderer {
     art.drawNear(ctx, vx0, vx1, this.time, S);
 
     // quem solta (silhuetas genéricas)
-    for (let i = 0; i < flyers.length; i++) this.drawPerson(flyers[i], snaps[i], alpha);
+    for (let i = 0; i < flyers.length; i++) if (!flyers[i].hidden) this.drawPerson(flyers[i], snaps[i], alpha);
     // linhas
     const px = 1 / S;
-    for (let i = 0; i < flyers.length; i++) this.drawLine(flyers[i], snaps[i], alpha, px);
+    for (let i = 0; i < flyers.length; i++) if (!flyers[i].hidden) this.drawLine(flyers[i], snaps[i], alpha, px);
     // pipas
-    for (let i = 0; i < flyers.length; i++) this.drawKite(i, flyers[i], snaps[i], alpha, S, realDt);
+    for (let i = 0; i < flyers.length; i++) if (!flyers[i].hidden) this.drawKite(i, flyers[i], snaps[i], alpha, S, realDt);
 
     // partículas
     this.drawParticles(fx, px);
@@ -450,7 +450,7 @@ export class Renderer {
     this.iy[i] = y;
     this.ia[i] = ang;
     // tamanho visual: tamanho real, mas nunca menor que ~14 px
-    const halfPx = Math.min(48, Math.max(17, 0.42 * S));
+    const halfPx = Math.min(48, Math.max(17, 0.42 * S)) * f.visualScale;
     const half = halfPx / S;
     const nx = Math.cos(ang);
     const ny = Math.sin(ang);
@@ -513,10 +513,22 @@ export class Renderer {
       ctx.lineTo(cx - px2 + dx * 0.25, cy - py2 + dy * 0.25);
       ctx.lineTo(cx - px2 - dx * 0.25, cy - py2 - dy * 0.25);
       ctx.closePath();
-      ctx.fillStyle = (j & 2) === 0 ? tailColor : shade(tailColor, 0.45);
+      const fx = f.look.fx;
+      if (fx === 'rainbow') ctx.fillStyle = PALETTE_FX[(j + Math.floor(this.time * 8)) % PALETTE_FX.length];
+      else if (fx === 'fire') ctx.fillStyle = (j + Math.floor(this.time * 12)) % 3 === 0 ? '#ffd400' : (j & 2) === 0 ? '#ff3b00' : '#ff8a00';
+      else ctx.fillStyle = (j & 2) === 0 ? tailColor : shade(tailColor, 0.45);
       ctx.fill();
     }
 
+    // brilho das skins especiais
+    if (f.look.fx === 'glow' || f.look.fx === 'fire') {
+      ctx.globalAlpha = 0.25 + 0.12 * Math.sin(this.time * 6);
+      ctx.fillStyle = f.look.fx === 'fire' ? '#ff6a00' : '#fff2a0';
+      ctx.beginPath();
+      ctx.arc(x, y, half * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
     // corpo
     ctx.save();
     ctx.translate(x, y);

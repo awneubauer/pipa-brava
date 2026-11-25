@@ -11,7 +11,11 @@ import { Camera } from './camera';
 import { Input } from './input';
 import { FixedLoop } from './loop';
 import { MANEUVERS, ManeuverTracker } from './maneuvers';
+import { createEasyState, easyControl } from './autopilot';
+import { BattleRules } from './battle';
+import { LEVELS, goalText, starsFor, type LevelDef } from './levels';
 import { SimRules, type SimResult } from './sim';
+import { getSkin } from './skins';
 import { loadSave, recordBest, writeSave, type SaveData } from './state';
 
 export interface GameResult {
@@ -28,6 +32,25 @@ export interface GameResult {
   difficulty: DifficultyId;
   /** linha liberada nesta partida (se houver) */
   unlocked: LineTypeId | null;
+  battle: BattleResult | null;
+}
+
+/** Resultado de uma fase (ou do modo Infinito, level = 0). */
+export interface BattleResult {
+  level: number;
+  success: boolean;
+  stars: number;
+  /** estrelas que esta fase tinha antes */
+  prevStars: number;
+  score: number;
+  cuts: number;
+  wave: number;
+  bestCombo: number;
+  coins: number;
+  reason: string;
+  /** "quase!" — quanto faltou */
+  nearMiss: string;
+  newBest: boolean;
 }
 
 const DPR_LEVELS = [2, 1.6, 1.3, 1];
@@ -53,6 +76,12 @@ export class Game {
   save: SaveData;
   world: World | null = null;
   sim: SimRules | null = null;
+  battle: BattleRules | null = null;
+  level: LevelDef | null = null;
+  private easy = createEasyState();
+  private battleOutcome: 'playing' | 'win' | 'lose' = 'playing';
+  private battleReason = '';
+  levelNum = 0;
   private ended = false;
   private oppList: Flyer[] = [];
   private endDelay = 0;
@@ -115,6 +144,11 @@ export class Game {
       windAngle: 0,
       time: 0,
       debug: null,
+      battle: null,
+      level: null,
+      cam: this.camera,
+      flyers: [],
+      easy: true,
     };
     window.addEventListener('resize', () => this.resize());
     window.visualViewport?.addEventListener('resize', () => this.resize());
@@ -144,15 +178,52 @@ export class Game {
     ];
   }
 
+  /** Começa uma fase (1..30) ou o modo Infinito (0) da Batalha no Céu. */
+  startLevel(n: number): void {
+    const lv = n > 0 ? LEVELS[n - 1] : null;
+    this.start('battle', lv ? lv.scene : this.save.settings.scene, n);
+  }
+
   /** Começa uma partida. */
-  start(mode: ModeId, sceneId: SceneId): void {
+  start(mode: ModeId, sceneId: SceneId, level = 0): void {
     const scene = getScene(sceneId);
     this.scene = scene;
     this.mode = mode;
     const st = this.save.settings;
-    const w = createWorld(scene.world(), mode, { model: st.model, color: st.color, tail: st.tail }, st.playerLine);
+    const skin = getSkin(st.skin);
+    const look = mode === 'sim' || mode === 'arcade' ? { model: st.model, color: st.color, tail: st.tail } : { model: skin.model, color: skin.color, tail: skin.tail, fx: skin.fx };
+    if (mode !== 'battle' && skin.fx) (look as { fx?: string }).fx = skin.fx;
+    const w = createWorld(scene.world(), mode, look, mode === 'sim' ? st.playerLine : 'comum');
     this.world = w;
     this.sim = mode === 'sim' ? new SimRules(w, st.opponents, st.difficulty) : null;
+    this.levelNum = mode === 'battle' ? level : 0;
+    this.level = mode === 'battle' && level > 0 ? LEVELS[level - 1] : null;
+    this.battle = null;
+    this.battleOutcome = 'playing';
+    this.battleReason = '';
+    this.easy = createEasyState();
+    this.input.mode = st.control;
+    if (mode === 'battle') {
+      const lv = this.level;
+      const mult = 1 + Math.floor(this.totalStars() / 10);
+      this.battle = new BattleRules(
+        w,
+        mult,
+        {
+          onCut: (pts, combo, coins, x, y) => {
+            this.popups.show(combo > 1 ? 'COMBO x' + combo + '!' : 'CORTOU!', '+' + pts + '   +' + coins + ' 🪙', this.w * 0.42, this.h * 0.3, true, 1.8, combo > 1 ? '#ff6bd6' : '#ffd400', combo > 1 ? 44 : 46, 'banner');
+            this.fx.burst(PKind.Confetti, x, y, 30, 8, 1.5, Math.floor(Math.random() * 8));
+            this.audio.maneuver(combo);
+          },
+          onWave: (wave, bonus) => {
+            this.popups.show('ONDA ' + wave + '!', '+' + bonus + ' de bônus', this.w * 0.42, this.h * 0.4, true, 2.4, '#7dff5a', 44, 'banner');
+            this.audio.victory();
+          },
+          onSpawn: () => {},
+        },
+        lv ? { fixedWave: lv.wave, concurrent: lv.concurrent, boss: lv.goal === 'boss' } : {},
+      );
+    }
     this.ended = false;
     this.endDelay = 0;
     this.snaps = w.flyers.map(() => createSnapshot(PHYSICS.lineNodes));
@@ -215,7 +286,9 @@ export class Game {
       sim: simRes,
       difficulty: st.difficulty,
       unlocked: null,
+      battle: this.battle ? this.battleResult() : null,
     };
+    if (this.battle) return r;
     if (w && scene && score > 0) r.best = recordBest(this.save, this.mode, scene.id, score);
     // vitórias liberam linhas melhores
     if (simRes && simRes.outcome === 'win') {
@@ -227,6 +300,98 @@ export class Game {
       }
     }
     return r;
+  }
+
+  totalStars(): number {
+    let s = 0;
+    for (const n of this.save.profile.stars) s += n || 0;
+    return s;
+  }
+
+  /** Fecha a fase: estrelas, moedas e recorde vão para o perfil. */
+  private battleResult(): BattleResult {
+    const b = this.battle as BattleRules;
+    const lv = this.level;
+    const prof = this.save.profile;
+    const st = b.stats;
+    const success = this.battleOutcome === 'win';
+    const prevStars = lv ? prof.stars[lv.n - 1] ?? 0 : 0;
+    let stars = 0;
+    let nearMiss = '';
+    if (lv) {
+      if (success) stars = starsFor(lv, st.time, b.maxDamage, st.cuts);
+      else if (lv.goal === 'cut') {
+        const left = lv.target - st.cuts;
+        if (left > 0) nearMiss = left === 1 ? 'Faltou só 1 pipa!' : 'Faltaram ' + left + ' pipas';
+      } else if (lv.goal === 'survive') {
+        const left = Math.ceil(lv.target - st.time);
+        if (left > 0) nearMiss = 'Faltaram só ' + left + ' s!';
+      } else if (lv.goal === 'combo') nearMiss = 'Seu melhor combo: x' + Math.max(1, st.bestCombo);
+      else if (lv.goal === 'boss') nearMiss = 'O Rei do Céu ainda manda...';
+    }
+    // moedas da partida + bônus por estrela nova
+    let coins = st.coins;
+    if (lv && stars > prevStars) coins += (stars - prevStars) * 10;
+    if (lv && success && prevStars === 0) coins += 10 + lv.n * 2;
+    prof.coins += coins;
+    if (lv && stars > prevStars) prof.stars[lv.n - 1] = stars;
+    let newBest = false;
+    if (!lv && st.score > prof.bestEndless) {
+      prof.bestEndless = st.score;
+      newBest = true;
+    }
+    writeSave(this.save);
+    return {
+      level: lv ? lv.n : 0,
+      success,
+      stars,
+      prevStars,
+      score: st.score,
+      cuts: st.cuts,
+      wave: st.wave,
+      bestCombo: st.bestCombo,
+      coins,
+      reason: this.battleReason,
+      nearMiss,
+      newBest,
+    };
+  }
+
+  /** Confere o objetivo da fase. */
+  private judgeLevel(): void {
+    const b = this.battle;
+    const lv = this.level;
+    if (!b || this.battleOutcome !== 'playing') return;
+    const st = b.stats;
+    const p = this.world?.flyers[0];
+    let end: 'win' | 'lose' | null = null;
+    if (p && !isAlive(p)) {
+      end = 'lose';
+      this.battleReason = p.status === 'cut' ? 'Sua linha foi cortada.' : 'Você perdeu a pipa.';
+    } else if (lv) {
+      if (lv.goal === 'cut' && st.cuts >= lv.target) end = 'win';
+      else if (lv.goal === 'combo' && st.bestCombo >= lv.target) end = 'win';
+      else if (lv.goal === 'boss' && b.bossDown) end = 'win';
+      else if (lv.goal === 'survive' && st.time >= lv.target) end = 'win';
+      else if (lv.time > 0 && lv.goal !== 'survive' && st.time >= lv.time) {
+        end = 'lose';
+        this.battleReason = 'O tempo acabou.';
+      }
+      if (end === 'win') this.battleReason = goalText(lv) + ' ✔';
+    }
+    if (!end) return;
+    this.battleOutcome = end;
+    st.over = true;
+    this.ended = true;
+    this.endDelay = end === 'win' ? 1.6 : 2.6;
+    if (end === 'win') {
+      this.audio.victory();
+      this.popups.show('FASE COMPLETA!', '', this.w * 0.42, this.h * 0.32, true, 2.2, '#7dff5a', 40, 'banner');
+      this.fx.burst(PKind.Confetti, p ? p.kite.x : 0, p ? p.kite.y : 0, 60, 12, 2, 3);
+    } else {
+      this.audio.defeat();
+      if (this.battleReason === 'O tempo acabou.') this.popups.show('TEMPO!', '', this.w * 0.42, this.h * 0.32, true, 2.2, '#ff6b6b', 44, 'banner');
+    }
   }
 
   unlockAudio(): void {
@@ -267,17 +432,54 @@ export class Game {
     }
     this.input.update(PHYSICS.dt);
     const c = this.input.state;
-    p.ctrl.steer = c.steer;
-    p.ctrl.handX = c.handX;
-    p.ctrl.handY = c.handY;
-    p.ctrl.reel = c.reel;
-    if (this.input.takeJerk()) p.ctrl.jerk = true;
+    const jerk = this.input.takeJerk();
+    if (this.input.mode === 'easy') {
+      // um dedo: a pipa vai até onde o dedo está (o carretel se ajusta sozinho)
+      const sk = this.input.sky;
+      let tx = p.kite.x;
+      let ty = p.kite.y;
+      let on = sk.active;
+      if (on) {
+        tx = this.camera.toWorldX(sk.x);
+        ty = this.camera.toWorldY(sk.y);
+      } else if (c.joy) {
+        // teclado: empurra o alvo na direção das setas
+        tx = p.kite.x + c.joyX * 0.15;
+        ty = p.kite.y + c.joyY * 0.15;
+        on = true;
+      }
+      easyControl(p, on, tx, ty, jerk, this.easy, PHYSICS.dt);
+    } else {
+      p.ctrl.steer = c.steer;
+      p.ctrl.handX = c.handX;
+      p.ctrl.handY = c.handY;
+      p.ctrl.reel = c.reel;
+      p.ctrl.assist = 0;
+      if (jerk) p.ctrl.jerk = true;
+    }
+    if (jerk && this.battle) {
+      this.battle.jerk();
+      this.fx.burst(PKind.Spark, p.kite.x, p.kite.y, 10, 6, 0.4, 0);
+    }
 
     if (this.sim) this.sim.think(PHYSICS.dt);
+    if (this.battle) this.battle.think(PHYSICS.dt);
     for (let i = 0; i < w.flyers.length; i++) takeSnapshot(this.snaps[i], w.flyers[i]);
     stepWorld(w);
     this.playTime += PHYSICS.dt;
     this.handleEvents(w);
+    if (this.battle) {
+      this.battle.step(PHYSICS.dt);
+      this.judgeLevel();
+      if (this.ended) {
+        this.endDelay -= PHYSICS.dt;
+        if (this.endDelay <= 0) {
+          this.ended = false;
+          this.hooks.onExit(this.finish());
+          return;
+        }
+      }
+    }
     if (this.sim) {
       if (this.sim.judge(PHYSICS.dt)) {
         this.ended = true;
@@ -356,6 +558,10 @@ export class Game {
           this.camera.shake(9);
           this.flash = 0.5;
           this.vibrate(mine ? [90, 40, 140] : [60, 30, 60]);
+          if (this.battle && !mine) {
+            this.battle.enemyDown(f, byMe);
+            break;
+          }
           if (mine) this.popups.show('FOI CORTADO!', 'Sua pipa foi embora...', W * 0.42, H * 0.3, true, 2.4, '#ff6b6b', 40, 'banner');
           else if (byMe) {
             const left = this.sim ? this.sim.aliveOpponents() : 0;
@@ -419,7 +625,7 @@ export class Game {
     cam.include(p.kite.x, p.kite.y, 7);
     for (let i = 1; i < w.flyers.length; i++) {
       const o = w.flyers[i];
-      if (o.status === 'landed') continue;
+      if (o.status === 'landed' || o.hidden) continue;
       // adversários visíveis, mas sem afastar demais
       if (Math.abs(o.kite.x - p.kite.x) < 160) cam.include(o.kite.x, o.kite.y, 5);
     }
@@ -484,6 +690,11 @@ export class Game {
       info.opponents = this.oppList;
       info.aliveOpponents = this.sim.aliveOpponents();
     }
+    info.battle = this.battle;
+    info.level = this.level;
+    info.cam = this.camera;
+    info.flyers = w.flyers;
+    info.easy = this.input.mode === 'easy';
     info.debug = null;
     this.hud.muted = !this.save.settings.sound;
     if (this.debug) {
@@ -511,8 +722,9 @@ export class Game {
       'linha ' + p.reel.out.toFixed(1) + ' m  carretel ' + p.reel.rate.toFixed(1) + ' m/s',
       'status ' + p.status + '  estoque ' + (p.reel.stock - p.reel.out).toFixed(0) + ' m',
     ];
-    if (this.sim) {
-      const cs = this.sim.cuts.crossings;
+    const cutSys = this.sim ? this.sim.cuts : this.battle ? this.battle.cuts : null;
+    if (cutSys) {
+      const cs = cutSys.crossings;
       for (let i = 0; i < cs.length; i++) {
         const c = cs[i];
         if (!c.active) continue;
@@ -520,6 +732,8 @@ export class Game {
           'cruz ' + c.a + '×' + c.b + ' desl ' + c.slide.toFixed(1) + ' m/s  dano ' + c.dmgA.toFixed(2) + '/' + c.dmgB.toFixed(2) + '  taxa ' + c.rateA.toFixed(2) + '/' + c.rateB.toFixed(2),
         );
       }
+    }
+    if (this.sim) {
       for (let i = 0; i < this.sim.ais.length; i++) lines.push('IA ' + w.flyers[i + 1].name + ': ' + this.sim.ais[i].state + '  T ' + w.flyers[i + 1].tension01.toFixed(2));
     }
     return lines.join('\n');
