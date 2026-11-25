@@ -36,7 +36,7 @@ export function easyControl(
   const L = f.reel.out;
   if (active) {
     // nunca mira dentro do chão
-    const floor = f.baseY + 4;
+    const floor = f.baseY + 9;
     if (ty < floor) ty = floor;
     const dx = tx - k.x;
     const dy = ty - k.y;
@@ -66,7 +66,7 @@ export function easyControl(
   if (f.tension01 > TENSION.yellow + 0.06) reel = Math.max(reel, 0.3);
   c.assist = active ? 1 : 0;
   c.assistX = tx;
-  c.assistY = ty < f.baseY + 4 ? f.baseY + 4 : ty;
+  c.assistY = ty < f.baseY + 9 ? f.baseY + 9 : ty;
   c.steer = active ? steer * 0.3 : 0;
   c.handX = 0;
   c.handY = 0;

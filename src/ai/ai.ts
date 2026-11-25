@@ -41,6 +41,11 @@ export class KiteAI {
   private easing = false;
   /** linhas enganchadas num duelo: a Batalha segura a pipa no lugar */
   hold = false;
+  /** Batalha: só ataca com a "vez" (um atacante por vez) e depois de rondar `patrolTime` s */
+  mayAttack = true;
+  patrolTime = 3;
+  /** lado em que ronda a pipa do jogador (Batalha) */
+  private orbit = 1;
   private safeFloor = 10;
 
   constructor(
@@ -59,7 +64,8 @@ export class KiteAI {
     this.ty = self.kite.y;
     this.computeFloor(hazards);
     if (assist > 0) {
-      this.state = 'aproximar';
+      // Batalha: chega, ronda um pouco e só ataca quando a vez for dela
+      this.state = 'patrulhar';
       this.patience = 0;
     }
     self.ctrl.assist = 0;
@@ -98,16 +104,26 @@ export class KiteAI {
       const playerUp = isAlive(player);
       switch (this.state) {
         case 'patrulhar':
-          if (playerUp && this.stateTime > this.patience * (1.2 - d.aggression)) this.go('aproximar');
+          if (this.assist > 0) {
+            if (playerUp && this.mayAttack && this.stateTime > this.patrolTime) this.go('aproximar');
+          } else if (playerUp && this.stateTime > this.patience * (1.2 - d.aggression)) this.go('aproximar');
           break;
         case 'aproximar':
           if (contact || Math.hypot(this.tx - k.x, this.ty - k.y) < 8 + d.aggression * 6) {
             this.go('engajar');
             this.hadContact = contact;
-          } else if (!playerUp || this.stateTime > 16) this.go('recompor');
+          } else if (!playerUp || this.stateTime > (this.assist > 0 ? 8 : 16)) this.go(this.assist > 0 ? 'patrulhar' : 'recompor');
           break;
         case 'engajar':
           if (contact) this.hadContact = true;
+          if (this.assist > 0) {
+            // Batalha: errou o bote? volta a rondar e tenta de novo depois
+            if (!contact && (this.hadContact ? this.noContact > 1.2 : this.stateTime > 3.5)) {
+              this.go('patrulhar');
+              this.orbit = -this.orbit;
+            }
+            break;
+          }
           if (myDmg > 0.6) this.go('fugir');
           else if (!playerUp) this.go('recompor');
           else if (this.hadContact ? this.noContact > 2.2 : this.stateTime > 6) this.go('aproximar');
@@ -198,10 +214,12 @@ export class KiteAI {
     c.handX = 0;
     // Batalha: a IA também é guiada (voa tão ágil quanto o jogador) e o carretel acompanha o alvo
     if (this.assist > 0 && !this.hold) {
+      // rondando e chegando: mais lenta (dá para fugir); no bote, rápida
+      const pace = this.state === 'engajar' ? 1 : this.state === 'aproximar' ? 0.55 : 0.45;
       const rho = Math.hypot(tx - f.handX, ty - f.handY);
       const wantL = Math.max(15, rho * 1.18 + 3);
       reel = clamp((wantL - f.reel.out) / 6, -0.8, 0.9);
-      c.assist = this.assist * (this.state === 'fugir' ? 0.8 : 1);
+      c.assist = this.assist * pace;
       c.assistX = tx;
       c.assistY = ty;
     } else if (!this.hold) c.assist = 0;
@@ -232,6 +250,13 @@ export class KiteAI {
     switch (this.state) {
       case 'patrulhar':
       case 'recompor': {
+        if (this.assist > 0) {
+          // Batalha: ronda a pipa do jogador, à vista, sem atacar
+          const sway = Math.sin(time * 0.6 + this.seed) * 6;
+          this.tx = pk.x + this.orbit * (20 + (this.seed % 7)) + sway;
+          this.ty = pk.y + 4 + Math.cos(time * 0.5 + this.seed) * 6;
+          break;
+        }
         const wob = Math.sin(time * 0.25 + this.seed) * 0.35;
         this.tx = f.baseX + wob * L;
         this.ty = f.baseY + L * 0.78;

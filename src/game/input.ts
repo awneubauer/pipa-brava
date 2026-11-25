@@ -16,7 +16,7 @@ export interface ControlState {
 
 interface TouchTrack {
   id: number;
-  zone: 'sky' | 'reel';
+  zone: 'sky' | 'reel' | 'action';
   sx: number;
   sy: number;
   x: number;
@@ -38,6 +38,8 @@ const SKY_STEER_PX = 78;
 const SKY_PULL_PX = 105;
 const JERK_SPEED = 1300; // px/s para baixo
 const MAX_TRACKS = 6;
+/** curso do joystick (px) */
+export const JOY_MAX = 64;
 
 /**
  * Entrada unificada. Céu: arrastar desloca o cabresto (lado) e puxa/dá linha (vertical);
@@ -63,8 +65,8 @@ export class Input {
   usedPull = 0;
   usedReel = 0;
   usedSteer = 0;
-  /** velocidade do "vai e vem" do dedo (px/s, suavizada) — a serra do duelo */
-  rub = 0;
+  /** modo fácil: botão de ação (px CSS) e se está pressionado */
+  readonly actionBtn = { x: 0, y: 0, r: 46, down: false };
 
   private tracks: TouchTrack[] = [];
   private keys = new Set<string>();
@@ -87,6 +89,13 @@ export class Input {
     window.addEventListener('keyup', this.keyUp);
     window.addEventListener('blur', () => this.reset());
     el.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  /** posiciona o botão PUXA! (chamar no resize) */
+  layoutAction(w: number, h: number, bottomInset: number): void {
+    this.actionBtn.r = Math.max(40, Math.min(54, w * 0.12));
+    this.actionBtn.x = w - this.actionBtn.r - 22;
+    this.actionBtn.y = h - this.actionBtn.r - 34 - bottomInset;
   }
 
   resize(w: number): void {
@@ -126,6 +135,12 @@ export class Input {
     if (!t) return;
     t.id = e.pointerId;
     t.zone = this.mode === 'pro' && x > this.w - this.reelWidth ? 'reel' : 'sky';
+    // modo fácil: botão PUXA! no canto inferior direito
+    if (this.mode === 'easy' && Math.hypot(x - this.actionBtn.x, y - this.actionBtn.y) < this.actionBtn.r + 16) {
+      t.zone = 'action';
+      this.state.jerk = true;
+      this.usedPull += 1;
+    }
     t.t0 = performance.now();
     t.moved = 0;
     // só uma mão em cada zona
@@ -169,7 +184,6 @@ export class Input {
     // largou a lata girando para soltar: ela continua girando (a pipa puxa a linha)
     if (t.zone === 'reel' && this.reelCmd > 0.08) this.spool = this.reelCmd;
     // modo fácil: toque rápido = puxão
-    if (this.mode === 'easy' && t.zone === 'sky' && t.moved < 16 && performance.now() - t.t0 < 260) this.requestJerk();
     t.id = -1;
   };
 
@@ -212,30 +226,35 @@ export class Input {
     let handY = 0;
     let reel = 0;
     let joy = false;
-    let rubNow = 0;
     this.sky.active = false;
+    this.actionBtn.down = false;
     this.reelTouch.active = false;
     if (this.enabled) {
       for (let ti = 0; ti < this.tracks.length; ti++) {
         const t = this.tracks[ti];
         if (t.id === -1) continue;
+        if (t.zone === 'action') {
+          this.actionBtn.down = true;
+          continue;
+        }
         if (t.zone === 'sky' && this.mode === 'easy') {
-          const ddy = Math.abs(t.y - t.prevY);
-          const ddx = Math.abs(t.x - t.prevX);
-          t.prevY = t.y;
-          t.prevX = t.x;
-          rubNow = dt > 0 ? (ddy + ddx * 0.5) / dt : 0;
-          // joystick relativo: a direção do arrasto é para onde a pipa vai
-          s.joyX = t.x - t.sx;
-          s.joyY = -(t.y - t.sy);
-          joy = Math.hypot(s.joyX, s.joyY) > 14;
+          // joystick flutuante: nasce onde o polegar encosta
+          let jx = t.x - t.sx;
+          let jy = -(t.y - t.sy);
+          const m = Math.hypot(jx, jy);
+          if (m > JOY_MAX) {
+            jx = (jx / m) * JOY_MAX;
+            jy = (jy / m) * JOY_MAX;
+          }
+          s.joyX = jx;
+          s.joyY = jy;
+          joy = m > 8;
           this.sky.active = true;
           this.sky.sx = t.sx;
           this.sky.sy = t.sy;
-          this.sky.x = t.x;
-          this.sky.y = t.y;
+          this.sky.x = t.sx + jx;
+          this.sky.y = t.sy - jy;
           if (joy) this.usedSteer += dt;
-          if (joy && s.joyY > 30) this.usedReel += dt;
         } else if (t.zone === 'sky') {
           const dx = t.x - t.sx;
           const dy = t.y - t.sy;
@@ -296,8 +315,6 @@ export class Input {
         this.wheel *= Math.exp(-dt * 3);
       } else this.wheel = 0;
     }
-    // a serra responde rápido mas sem tremer
-    this.rub += (rubNow - this.rub) * Math.min(1, dt * (rubNow > this.rub ? 10 : 6));
     s.joy = joy;
     if (!joy) {
       s.joyX = 0;
@@ -306,12 +323,12 @@ export class Input {
     // teclado no modo fácil vira joystick
     if (this.mode === 'easy' && !joy && steer !== 0) {
       s.joy = true;
-      s.joyX = steer * 80;
+      s.joyX = steer * JOY_MAX;
     }
     if (this.mode === 'easy' && !joy && reel !== 0 && this.keys.size > 0) {
       s.joy = true;
-      s.joyY = reel > 0 ? -80 : 80;
-      if (steer !== 0) s.joyX = steer * 80;
+      s.joyY = reel > 0 ? -JOY_MAX : JOY_MAX;
+      if (steer !== 0) s.joyX = steer * JOY_MAX;
     }
     s.steer = steer;
     s.handX = handX;

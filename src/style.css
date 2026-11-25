@@ -1,5 +1,6 @@
 :root {
   --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
   --bg: #24184a;
   --card: rgba(30, 18, 64, 0.82);
   --accent: #ffcf3f;

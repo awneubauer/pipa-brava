@@ -343,30 +343,55 @@ export class Hud {
     }
   }
 
-  /** Modo fácil: anel no dedo e linha guia até a pipa. */
+  /** Modo fácil: joystick flutuante no canto e botão PUXA!. */
   private drawFinger(ctx: CanvasRenderingContext2D, input: Input, info: HudInfo): void {
-    if (!input.sky.active) return;
     const s = input.sky;
-    const k = info.player.kite;
-    const kx = info.cam.toScreenX(k.x);
-    const ky = info.cam.toScreenY(k.y);
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash(GUIDE_DASH);
+    if (s.active) {
+      ctx.fillStyle = 'rgba(20,12,40,0.35)';
+      ctx.beginPath();
+      ctx.arc(s.sx, s.sy, 64, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,230,120,0.95)';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 24, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (info.battle && info.battle.stats.time < 8) {
+      // mostra onde fica o joystick no começo
+      const x = 90;
+      const y = info.cam.h - 120;
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.setLineDash(GUIDE_DASH);
+      ctx.beginPath();
+      ctx.arc(x, y, 56, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash(NO_DASH);
+      ctx.font = F800_10;
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.fillText('ARRASTE AQUI', x, y);
+      ctx.globalAlpha = 1;
+    }
+    // botão de ação
+    if (!info.battle) return;
+    const a = input.actionBtn;
+    const duel = info.battle.duel;
+    const pulse = duel ? 1 + 0.06 * Math.sin(this.duelT * 14) : 1;
+    ctx.fillStyle = a.down ? 'rgba(255,180,40,0.95)' : duel ? 'rgba(255,212,0,0.92)' : 'rgba(255,79,139,0.82)';
     ctx.beginPath();
-    ctx.moveTo(kx, ky);
-    ctx.lineTo(s.x, s.y);
-    ctx.stroke();
-    ctx.setLineDash(NO_DASH);
-    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, 18, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(255,230,120,0.9)';
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, 5, 0, Math.PI * 2);
+    ctx.arc(a.x, a.y, a.r * pulse, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = duel ? '#3a1a10' : '#ffffff';
+    ctx.font = F900_15;
+    ctx.textAlign = 'center';
+    ctx.fillText(duel ? 'CORTA!' : 'PUXA!', a.x, a.y + 1);
   }
 
   /** HUD da Batalha: objetivo, tempo, vida da linha, combo e barras dos inimigos. */
@@ -462,7 +487,7 @@ export class Hud {
     ctx.fillRect(80, top + 57, (panelW - 90) * life, 10);
     // combo e puxão
     ctx.textAlign = 'center';
-    if (b.combo > 1 && b.comboTimer > 0) {
+    if (b.combo > 1 && b.comboTimer > 0 && !b.duel) {
       ctx.font = F900_30;
       ctx.lineWidth = 5;
       ctx.strokeStyle = 'rgba(30,10,40,0.7)';
@@ -480,80 +505,102 @@ export class Hud {
       ctx.fillText('PUXÃO!', info.cam.toScreenX(p.kite.x), info.cam.toScreenY(p.kite.y) + 34);
     }
     // duelo de serra
-    if (b.duel) this.drawDuel(ctx, w, info, b);
+    if (b.duel) this.drawDuel(ctx, w, info, b, top, panelW);
+    // aviso de ataque sobre quem está vindo
+    for (let i = 0; i < b.ais.length; i++) {
+      const ai = b.ais[i];
+      const f = fl[i + 1];
+      if (!ai || f.hidden || (ai.state !== 'aproximar' && ai.state !== 'engajar') || b.duel) continue;
+      const x = info.cam.toScreenX(f.kite.x);
+      const y = info.cam.toScreenY(f.kite.y) - 30 * f.visualScale - 30;
+      const bl = Math.sin(this.duelT * 16) > -0.3;
+      if (!bl) continue;
+      ctx.font = F900_22;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffd400';
+      ctx.fillText('⚠', x, y);
+    }
+    this.duelT += 0.004;
     // dica nos primeiros segundos
     if (st.time < 6 && info.easy && !b.duel) {
       ctx.globalAlpha = Math.min(1, (6 - st.time) / 1.5);
       ctx.fillStyle = 'rgba(20,12,40,0.6)';
       const hw = Math.min(w - 24, 330);
       ctx.beginPath();
-      ctx.roundRect((w - hw) / 2, info.cam.h - 96, hw, 50, 14);
+      ctx.roundRect((w - hw) / 2, info.cam.h - 96 - 140, hw, 50, 14);
       ctx.fill();
       ctx.font = F800_12;
       ctx.fillStyle = '#ffffff';
-      ctx.fillText('Arraste o dedo: a pipa vai atrás', w / 2, info.cam.h - 80);
+      ctx.fillText('Polegar esquerdo: pilota · PUXA!: arrancada', w / 2, info.cam.h - 220);
       ctx.fillStyle = '#ffe680';
-      ctx.fillText('Cruzou a linha? Esfregue o dedo ↕ rápido!', w / 2, info.cam.h - 61);
+      ctx.fillText('Cruze a linha deles (de cima é melhor!)', w / 2, info.cam.h - 201);
       ctx.globalAlpha = 1;
     }
   }
 
-  /** Painel do duelo: quem serra mais rápido, e a vida das duas linhas. */
-  private drawDuel(ctx: CanvasRenderingContext2D, w: number, info: HudInfo, b: BattleRules): void {
-    const H = info.cam.h;
+  /** Painel do duelo: barra de timing, vida das duas linhas e bônus. */
+  private drawDuel(ctx: CanvasRenderingContext2D, w: number, info: HudInfo, b: BattleRules, top: number, panelW: number): void {
     const p = info.player;
     const e = b.duelEnemy >= 0 ? info.flyers[b.duelEnemy] : null;
-    const pw = Math.min(w - 24, 340);
-    const x0 = (w - pw) / 2;
-    const y0 = H - 150;
+    const x0 = 8;
+    const y0 = top + 84;
+    const pw = panelW;
     this.duelT += 0.016;
-    ctx.fillStyle = 'rgba(20,12,40,0.72)';
+    ctx.fillStyle = 'rgba(20,12,40,0.78)';
     ctx.beginPath();
-    ctx.roundRect(x0, y0, pw, 112, 18);
+    ctx.roundRect(x0, y0, pw, 96, 16);
     ctx.fill();
-    ctx.textAlign = 'center';
-    ctx.font = F900_22;
-    const pulse = 1 + 0.08 * Math.sin(this.duelT * 18);
-    ctx.save();
-    ctx.translate(w / 2, y0 + 22);
-    ctx.scale(pulse, pulse);
-    ctx.fillStyle = '#ffd400';
-    ctx.fillText('↕ SERRA! ↕', 0, 0);
-    ctx.restore();
-    // vida das linhas (cabo de guerra)
+    // vida das linhas
     const myLife = Math.max(0, 1 - p.damage);
     const theirLife = e ? Math.max(0, 1 - e.damage) : 1;
-    const bw = pw / 2 - 26;
+    const bw = pw / 2 - 20;
     ctx.font = F800_10;
-    ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'left';
-    ctx.fillText('VOCÊ', x0 + 14, y0 + 46);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('VOCÊ', x0 + 12, y0 + 12);
     ctx.textAlign = 'right';
-    ctx.fillText(e ? e.name.toUpperCase() : '', x0 + pw - 14, y0 + 46);
+    ctx.fillText(e ? e.name.toUpperCase() : '', x0 + pw - 12, y0 + 12);
     ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    ctx.fillRect(x0 + 14, y0 + 54, bw, 12);
-    ctx.fillRect(x0 + pw - 14 - bw, y0 + 54, bw, 12);
+    ctx.fillRect(x0 + 12, y0 + 20, bw, 9);
+    ctx.fillRect(x0 + pw - 12 - bw, y0 + 20, bw, 9);
     ctx.fillStyle = myLife > 0.4 ? '#2ed573' : '#ff3b3b';
-    ctx.fillRect(x0 + 14, y0 + 54, bw * myLife, 12);
+    ctx.fillRect(x0 + 12, y0 + 20, bw * myLife, 9);
     ctx.fillStyle = '#ff4d6d';
-    ctx.fillRect(x0 + pw - 14 - bw * theirLife, y0 + 54, bw * theirLife, 12);
-    // força das serras
-    ctx.font = F800_10;
+    ctx.fillRect(x0 + pw - 12 - bw * theirLife, y0 + 20, bw * theirLife, 9);
+    // barra de timing
+    const tx = x0 + 14;
+    const tw = pw - 28;
+    const ty = y0 + 40;
+    const th = 26;
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.beginPath();
+    ctx.roundRect(tx, ty, tw, th, 8);
+    ctx.fill();
+    const zx = tx + (b.zoneC - b.zoneHW) * tw;
+    ctx.fillStyle = '#2ed573';
+    ctx.fillRect(zx, ty, b.zoneHW * 2 * tw, th);
+    ctx.fillStyle = '#9dff8a';
+    ctx.fillRect(tx + (b.zoneC - b.zoneHW * 0.4) * tw, ty, b.zoneHW * 0.8 * tw, th);
+    const mx = tx + b.marker * tw;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(mx - 3, ty - 5, 6, th + 10);
+    ctx.beginPath();
+    ctx.moveTo(mx - 8, ty - 8);
+    ctx.lineTo(mx + 8, ty - 8);
+    ctx.lineTo(mx, ty);
+    ctx.closePath();
+    ctx.fill();
+    // retorno do último toque / instrução
     ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    ctx.fillText('SUA SERRA', x0 + 14 + bw / 2, y0 + 80);
-    ctx.fillText('SERRA DELE', x0 + pw - 14 - bw / 2, y0 + 80);
-    ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    ctx.fillRect(x0 + 14, y0 + 88, bw, 8);
-    ctx.fillRect(x0 + pw - 14 - bw, y0 + 88, bw, 8);
-    const ps = Math.min(1, b.playerSaw / 1.35);
-    ctx.fillStyle = ps > b.enemySawNow / 1.35 ? '#7dff5a' : '#ffd400';
-    ctx.fillRect(x0 + 14, y0 + 88, bw * ps, 8);
-    ctx.fillStyle = '#ff8a00';
-    ctx.fillRect(x0 + pw - 14 - bw * Math.min(1, b.enemySawNow / 1.35), y0 + 88, bw * Math.min(1, b.enemySawNow / 1.35), 8);
-    // mãozinha balançando
-    ctx.font = F900_30;
-    ctx.fillText('👆', w / 2, y0 + 70 + Math.sin(this.duelT * 22) * 12);
+    ctx.font = F800_12;
+    if (b.feedbackT > 0) {
+      ctx.fillStyle = b.feedback === 'erro' ? '#ff6b6b' : b.feedback === 'perfeito' ? '#7dff5a' : '#ffd400';
+      ctx.fillText(b.feedback === 'erro' ? 'ERROU! Espere a zona verde' : b.feedback === 'perfeito' ? 'PERFEITO!' : 'CORTE!', x0 + pw / 2, y0 + 84);
+    } else {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(b.above ? 'POR CIMA! · aperte CORTA! no verde' : b.surprise ? 'SURPRESA! · aperte CORTA! no verde' : 'Aperte CORTA! no verde', x0 + pw / 2, y0 + 84);
+    }
+    void w;
   }
 
   private lifeBar(ctx: CanvasRenderingContext2D, x: number, y: number, name: string, life: number, alive: boolean): void {

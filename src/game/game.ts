@@ -8,7 +8,7 @@ import { getScene } from '../scenes/index';
 import type { SceneDef, SceneId } from '../scenes/types';
 import { Hud, type HudInfo } from '../ui/hud';
 import { Camera } from './camera';
-import { Input } from './input';
+import { Input, JOY_MAX } from './input';
 import { FixedLoop } from './loop';
 import { MANEUVERS, ManeuverTracker } from './maneuvers';
 import { createEasyState, easyControl } from './autopilot';
@@ -79,7 +79,24 @@ export class Game {
   battle: BattleRules | null = null;
   level: LevelDef | null = null;
   private easy = createEasyState();
-  private duelBuzz = 0;
+  /** resposta a um toque no duelo */
+  private duelFeedback(r: 'perfeito' | 'corte' | 'erro' | null): void {
+    if (!r || !this.world) return;
+    const p = this.world.flyers[0];
+    if (r === 'erro') {
+      this.vibrate([50, 30, 50]);
+      this.camera.shake(5);
+      this.audio.snapBreak();
+      this.popups.show('ERROU!', '', p.kite.x, p.kite.y + 3, false, 0.7, '#ff6b6b', 26, 'pop');
+    } else {
+      const perfect = r === 'perfeito';
+      this.vibrate(perfect ? [20, 20, 40] : 25);
+      this.camera.shake(perfect ? 7 : 4);
+      this.audio.scrape(1);
+      this.audio.maneuver(perfect ? 4 : 1);
+      this.popups.show(perfect ? 'PERFEITO!' : 'CORTE!', '', p.kite.x, p.kite.y + 3, false, 0.8, perfect ? '#7dff5a' : '#ffd400', perfect ? 30 : 26, 'pop');
+    }
+  }
   private battleOutcome: 'playing' | 'win' | 'lose' = 'playing';
   private battleReason = '';
   levelNum = 0;
@@ -168,6 +185,8 @@ export class Game {
     this.renderer.resize(w, h, dpr);
     this.camera.resize(w, h);
     this.input.resize(w);
+    const sab = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sab') || '0', 10) || 0;
+    this.input.layoutAction(w, h, sab);
     const safeTop = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sat') || '0', 10) || 0;
     this.hud.safeTop = safeTop;
     this.hud.layout(w, this.input.reelWidth);
@@ -208,6 +227,8 @@ export class Game {
     this.battleReason = '';
     this.easy = createEasyState();
     this.input.mode = st.control;
+    // modo fácil na Batalha: a briga fica acima dos polegares
+    this.camera.bottomPad = mode === 'battle' && st.control === 'easy' ? 0.2 : 0.06;
     if (mode === 'battle') {
       const lv = this.level;
       const mult = 1 + Math.floor(this.totalStars() / 10);
@@ -441,24 +462,13 @@ export class Game {
     const c = this.input.state;
     const jerk = this.input.takeJerk();
     if (this.input.mode === 'easy') {
-      // um dedo: a pipa vai até onde o dedo está (o carretel se ajusta sozinho)
-      const sk = this.input.sky;
-      let tx = p.kite.x;
-      let ty = p.kite.y;
-      let on = sk.active;
-      if (on) {
-        tx = this.camera.toWorldX(sk.x);
-        ty = this.camera.toWorldY(sk.y);
-      } else if (c.joy) {
-        // teclado: empurra o alvo na direção das setas
-        tx = p.kite.x + c.joyX * 0.15;
-        ty = p.kite.y + c.joyY * 0.15;
-        on = true;
-      }
-      if (this.battle && this.battle.duel) {
-        // linhas enganchadas: a pipa fica presa no duelo, o dedo vira serra
-        easyControl(p, true, this.battle.holdX, this.battle.holdY, false, this.easy, PHYSICS.dt);
-      } else easyControl(p, on, tx, ty, jerk, this.easy, PHYSICS.dt);
+      // joystick no canto: a pipa voa na direção empurrada (o carretel se ajusta sozinho)
+      const on = c.joy;
+      const tx = p.kite.x + (c.joyX / JOY_MAX) * 14;
+      const ty = p.kite.y + (c.joyY / JOY_MAX) * 14;
+      const inDuel = !!this.battle && this.battle.duel;
+      if (inDuel) easyControl(p, true, (this.battle as BattleRules).holdX, (this.battle as BattleRules).holdY, false, this.easy, PHYSICS.dt);
+      else easyControl(p, on, tx, ty, jerk, this.easy, PHYSICS.dt);
     } else {
       p.ctrl.steer = c.steer;
       p.ctrl.handX = c.handX;
@@ -468,8 +478,11 @@ export class Game {
       if (jerk) p.ctrl.jerk = true;
     }
     if (jerk && this.battle) {
-      this.battle.jerk();
-      this.fx.burst(PKind.Spark, p.kite.x, p.kite.y, 10, 6, 0.4, 0);
+      if (this.battle.duel) this.duelFeedback(this.battle.duelTap());
+      else {
+        this.battle.jerk();
+        this.fx.burst(PKind.Spark, p.kite.x, p.kite.y, 10, 6, 0.4, 0);
+      }
     }
 
     if (this.sim) this.sim.think(PHYSICS.dt);
@@ -480,19 +493,13 @@ export class Game {
     this.handleEvents(w);
     if (this.battle) {
       const wasDuel = this.battle.duel;
-      this.battle.step(PHYSICS.dt, this.input.mode === 'easy' ? this.input.rub : Math.abs(p.reel.rate) * 60);
+      this.battle.step(PHYSICS.dt);
       if (this.battle.duel && !wasDuel) {
-        this.popups.show('SERRA!', 'Esfregue o dedo ↕ rápido!', this.w * 0.42, this.h * 0.24, true, 1.4, '#ffd400', 46, 'banner');
+        const b = this.battle;
+        const sub = b.above && b.surprise ? 'Por cima e de surpresa!' : b.above ? 'Por cima! Zona maior' : b.surprise ? 'De surpresa! Zona maior' : 'Aperte PUXA! na hora certa';
+        this.popups.show('ENGANCHOU!', sub, this.w * 0.42, this.h * 0.3, true, 1.3, '#ffd400', 40, 'banner');
         this.vibrate([30, 30, 30]);
         this.camera.shake(5);
-      }
-      if (this.battle.duel) {
-        this.duelBuzz -= PHYSICS.dt;
-        if (this.duelBuzz <= 0) {
-          this.duelBuzz = 0.12;
-          this.vibrate(12);
-          this.camera.shake(1.5 + this.battle.playerSaw * 2);
-        }
       }
       this.judgeLevel();
       if (this.ended) {

@@ -22,6 +22,8 @@ export class Camera {
   private maxX = -Infinity;
   private minY = Infinity;
   private maxY = -Infinity;
+  /** fração da tela reservada embaixo (polegares nos controles do modo fácil) */
+  bottomPad = 0.06;
 
   resize(w: number, h: number): void {
     this.w = w;
@@ -49,14 +51,14 @@ export class Camera {
     const bh = Math.max(10, this.maxY - minY);
     const usableW = this.w * (1 - CAMERA.margin * 2);
     // espaço do HUD em cima e o chão embaixo
-    const usableH = this.h * (1 - CAMERA.margin * 2 - 0.08);
+    const usableH = this.h * (1 - CAMERA.margin * 2 - 0.08 - (this.bottomPad - 0.06));
     const s = clamp(Math.min(usableW / bw, usableH / bh), CAMERA.minScale, CAMERA.maxScale);
     this.ts = s;
     this.tx = (this.minX + this.maxX) / 2;
     // o chão fica perto da base da tela
     const viewH = this.h / s;
-    const centerFromBounds = (minY + this.maxY) / 2 + viewH * 0.04;
-    const groundBottom = floor - viewH * 0.06 + viewH / 2;
+    const centerFromBounds = (minY + this.maxY) / 2 + viewH * (0.04 - (this.bottomPad - 0.06) * 0.5);
+    const groundBottom = floor - viewH * this.bottomPad + viewH / 2;
     this.ty = Math.max(centerFromBounds, groundBottom);
   }
 

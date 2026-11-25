@@ -49,8 +49,9 @@ function playLevel(n: number, seed: number, rub = 1800) {
         if (e.type === 'cut' && e.flyer !== 0) b.enemyDown(w.flyers[e.flyer], e.other === 0);
       }
       w.events.clear();
-      // no duelo, o robô esfrega o dedo a ~1800 px/s
-      b.step(PHYSICS.dt, rub);
+      // no duelo, o robô aperta CORTA! quando o marcador está na zona (se `rub` > 0)
+      b.step(PHYSICS.dt);
+      if (rub > 0 && b.duel && Math.abs(b.marker - b.zoneC) < b.zoneHW * 0.7) b.duelTap();
       for (const f of w.flyers) expect(Number.isFinite(f.kite.x + f.kite.y + f.kite.z)).toBe(true);
       if (!isAlive(p)) return { win: false, b };
       if (lv.goal === 'cut' && b.stats.cuts >= lv.target) return { win: true, b };
@@ -83,20 +84,43 @@ describe('Batalha no Céu (fases)', () => {
     expect(r.b.stats.time).toBeLessThan(40);
   });
 
-  it('a fase 2 (3 cortes) sai em menos de 40 s esfregando o dedo', () => {
+  it('a fase 2 (3 cortes) sai em menos de 60 s acertando o timing', () => {
     const r = playLevel(2, 7);
     expect(r.win).toBe(true);
-    expect(r.b.stats.time).toBeLessThan(40);
+    expect(r.b.stats.time).toBeLessThan(60);
   });
 
-  it('duelo de serra: quem não esfrega perde a linha', () => {
+  it('apertar sem parar (spam) erra e perde', () => {
+    const lv = LEVELS[0];
+    const w = createWorld(getScene(lv.scene).world(), 'battle', { model: 'raia', color: '#f00', tail: '#ff0' });
+    const b = new BattleRules(w, 1, { onCut: () => {}, onWave: () => {}, onSpawn: () => {} }, { fixedWave: 1, concurrent: 1 });
+    // força um duelo artificial: zona longe do marcador
+    let misses = 0;
+    let hits = 0;
+    (b as unknown as { duel: boolean }).duel = true;
+    for (let i = 0; i < 40; i++) {
+      (b as unknown as { tapCooldown: number }).tapCooldown = 0;
+      (b as unknown as { duelCross: unknown }).duelCross = { b: 1, dmgA: 0, dmgB: 0 };
+      b.marker = (i * 0.137) % 1;
+      b.zoneC = 0.5;
+      b.zoneHW = 0.08;
+      const r = b.duelTap();
+      if (r === 'erro') misses++;
+      else if (r) hits++;
+    }
+    expect(misses).toBeGreaterThan(hits * 3);
+  });
+
+  it('duelo: quem não aperta na hora certa perde a linha', () => {
     const r = playLevel(1, 11, 0);
     expect(r.win).toBe(false);
   });
 
-  it('o inimigo aparece e cruza a linha em poucos segundos', () => {
+  it('o primeiro inimigo ronda antes de atacar, mas a fase 1 sai rápido', () => {
     const r = playLevel(1, 11);
-    expect(r.b.stats.time).toBeLessThan(8);
+    expect(r.win).toBe(true);
+    expect(r.b.stats.time).toBeGreaterThan(3);
+    expect(r.b.stats.time).toBeLessThan(30);
   });
 
   it('a loja tem skins com preços crescentes e uma grátis', () => {

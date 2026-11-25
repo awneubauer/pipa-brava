@@ -353,7 +353,7 @@ export function stepFlyer(f: Flyer, env: FlyerEnv, dt: number): void {
         const dx = f.ctrl.assistX - k.x;
         const dy = f.ctrl.assistY - k.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1e-6;
-        const sp = Math.min(ASSIST.maxSpeed, dist * ASSIST.approach);
+        const sp = Math.min(ASSIST.maxSpeed * (0.35 + 0.65 * (as > 1 ? 1 : as)), dist * ASSIST.approach);
         const vdx = (dx / dist) * sp;
         const vdy = (dy / dist) * sp;
         ax = (vdx - k.vx) * ASSIST.gain * as * p.mass;
