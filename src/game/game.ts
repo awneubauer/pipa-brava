@@ -15,7 +15,7 @@ import { createEasyState, easyControl } from './autopilot';
 import { BattleRules } from './battle';
 import { LEVELS, goalText, starsFor, type LevelDef } from './levels';
 import { SimRules, type SimResult } from './sim';
-import { getSkin } from './skins';
+import { getCerol, getSkin } from './skins';
 import { loadSave, recordBest, writeSave, type SaveData } from './state';
 
 export interface GameResult {
@@ -79,6 +79,7 @@ export class Game {
   battle: BattleRules | null = null;
   level: LevelDef | null = null;
   private easy = createEasyState();
+  private duelBuzz = 0;
   private battleOutcome: 'playing' | 'win' | 'lose' = 'playing';
   private battleReason = '';
   levelNum = 0;
@@ -195,6 +196,10 @@ export class Game {
     if (mode !== 'battle' && skin.fx) (look as { fx?: string }).fx = skin.fx;
     const w = createWorld(scene.world(), mode, look, mode === 'sim' ? st.playerLine : 'comum');
     this.world = w;
+    if (mode === 'battle') {
+      const ce = getCerol(st.cerol);
+      w.flyers[0].lineType = { ...w.flyers[0].lineType, name: ce.name, color: ce.color };
+    }
     this.sim = mode === 'sim' ? new SimRules(w, st.opponents, st.difficulty) : null;
     this.levelNum = mode === 'battle' ? level : 0;
     this.level = mode === 'battle' && level > 0 ? LEVELS[level - 1] : null;
@@ -221,7 +226,9 @@ export class Game {
           },
           onSpawn: () => {},
         },
-        lv ? { fixedWave: lv.wave, concurrent: lv.concurrent, boss: lv.goal === 'boss' } : {},
+        lv
+          ? { fixedWave: lv.wave, concurrent: lv.concurrent, boss: lv.goal === 'boss', cerol: getCerol(st.cerol).power }
+          : { cerol: getCerol(st.cerol).power },
       );
     }
     this.ended = false;
@@ -448,7 +455,10 @@ export class Game {
         ty = p.kite.y + c.joyY * 0.15;
         on = true;
       }
-      easyControl(p, on, tx, ty, jerk, this.easy, PHYSICS.dt);
+      if (this.battle && this.battle.duel) {
+        // linhas enganchadas: a pipa fica presa no duelo, o dedo vira serra
+        easyControl(p, true, this.battle.holdX, this.battle.holdY, false, this.easy, PHYSICS.dt);
+      } else easyControl(p, on, tx, ty, jerk, this.easy, PHYSICS.dt);
     } else {
       p.ctrl.steer = c.steer;
       p.ctrl.handX = c.handX;
@@ -469,7 +479,21 @@ export class Game {
     this.playTime += PHYSICS.dt;
     this.handleEvents(w);
     if (this.battle) {
-      this.battle.step(PHYSICS.dt);
+      const wasDuel = this.battle.duel;
+      this.battle.step(PHYSICS.dt, this.input.mode === 'easy' ? this.input.rub : Math.abs(p.reel.rate) * 60);
+      if (this.battle.duel && !wasDuel) {
+        this.popups.show('SERRA!', 'Esfregue o dedo ↕ rápido!', this.w * 0.42, this.h * 0.24, true, 1.4, '#ffd400', 46, 'banner');
+        this.vibrate([30, 30, 30]);
+        this.camera.shake(5);
+      }
+      if (this.battle.duel) {
+        this.duelBuzz -= PHYSICS.dt;
+        if (this.duelBuzz <= 0) {
+          this.duelBuzz = 0.12;
+          this.vibrate(12);
+          this.camera.shake(1.5 + this.battle.playerSaw * 2);
+        }
+      }
       this.judgeLevel();
       if (this.ended) {
         this.endDelay -= PHYSICS.dt;

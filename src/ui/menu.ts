@@ -13,7 +13,7 @@ import {
 } from '../config';
 import { drawKiteShape, shade } from '../render/kiteArt';
 import { LEVELS, goalText, isUnlocked } from '../game/levels';
-import { SKINS, getSkin } from '../game/skins';
+import { CEROLS, SKINS, getCerol, getSkin } from '../game/skins';
 import type { GameResult } from '../game/game';
 import type { SaveData } from '../game/state';
 import { bestKey, writeSave } from '../game/state';
@@ -141,8 +141,20 @@ export class Menu {
     }).join('');
     this.show(`<div class="panel custom">
       <div class="topbar"><span class="pill">🪙 ${prof.coins.toLocaleString('pt-BR')}</span></div>
-      <h2>Loja de pipas</h2>
+      <h2>Loja</h2>
       <p class="muted">Ganhe moedas cortando pipas e completando fases.</p>
+      <h3>Cerol (corta mais rápido)</h3>
+      <div class="cerols">${CEROLS.map((ce) => {
+        const owned = prof.owned.includes(ce.id);
+        const using = d.settings.cerol === ce.id;
+        const can = owned || prof.coins >= ce.price;
+        const label = using ? 'Em uso' : owned ? 'Usar' : `🪙 ${ce.price}`;
+        return `<button class="cerol ${using ? 'sel' : ''}" data-cerol="${ce.id}" ${can ? '' : 'disabled'}>
+          <span class="swl" style="background:${ce.color}"></span>
+          <span class="cerol-txt"><b>${esc(ce.name)}</b><small>${esc(ce.desc)} · força ×${ce.power.toFixed(1)}</small></span>
+          <em>${label}</em></button>`;
+      }).join('')}</div>
+      <h3>Pipas</h3>
       <div class="models">${cards}</div>
       <button class="big" data-action="home">Voltar</button>
     </div>`);
@@ -423,6 +435,20 @@ export class Menu {
     const lvl = t.getAttribute('data-level');
     if (lvl !== null) {
       this.hooks.playLevel(Number(lvl));
+      return;
+    }
+    const cer = t.getAttribute('data-cerol');
+    if (cer) {
+      const ce = getCerol(cer);
+      const prof = data.profile;
+      if (!prof.owned.includes(ce.id)) {
+        if (prof.coins < ce.price) return;
+        prof.coins -= ce.price;
+        prof.owned.push(ce.id);
+      }
+      data.settings.cerol = ce.id;
+      writeSave(data);
+      this.shop();
       return;
     }
     const skin = t.getAttribute('data-skin');

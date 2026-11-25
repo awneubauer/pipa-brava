@@ -9,7 +9,7 @@ import { createWorld, stepWorld } from '../src/physics/world';
 import { getScene } from '../src/scenes/index';
 import { flatEnv, makeFlyer, run, steadyWind } from './helpers';
 
-function playLevel(n: number, seed: number) {
+function playLevel(n: number, seed: number, rub = 1800) {
   const lv = LEVELS[n - 1];
   const orig = Math.random;
   let sd = seed;
@@ -39,9 +39,8 @@ function playLevel(n: number, seed: number) {
         const sx = best.handX + (best.kite.x - best.handX) * 0.65;
         const sy = best.handY + (best.kite.y - best.handY) * 0.65;
         const side = Math.sin(w.time * 1.3) > 0 ? 1 : -1;
-        const jerk = s % 90 === 0 && b.cuts.inContact(p);
-        easyControl(p, true, sx + side * 9, sy + Math.sin(w.time * 2.1) * 5, jerk, es, PHYSICS.dt);
-        if (jerk) b.jerk();
+        if (b.duel) easyControl(p, true, b.holdX, b.holdY, false, es, PHYSICS.dt);
+        else easyControl(p, true, sx + side * 9, sy + Math.sin(w.time * 2.1) * 5, false, es, PHYSICS.dt);
       } else easyControl(p, false, 0, 0, false, es, PHYSICS.dt);
       b.think(PHYSICS.dt);
       stepWorld(w);
@@ -50,7 +49,8 @@ function playLevel(n: number, seed: number) {
         if (e.type === 'cut' && e.flyer !== 0) b.enemyDown(w.flyers[e.flyer], e.other === 0);
       }
       w.events.clear();
-      b.step(PHYSICS.dt);
+      // no duelo, o robô esfrega o dedo a ~1800 px/s
+      b.step(PHYSICS.dt, rub);
       for (const f of w.flyers) expect(Number.isFinite(f.kite.x + f.kite.y + f.kite.z)).toBe(true);
       if (!isAlive(p)) return { win: false, b };
       if (lv.goal === 'cut' && b.stats.cuts >= lv.target) return { win: true, b };
@@ -83,10 +83,20 @@ describe('Batalha no Céu (fases)', () => {
     expect(r.b.stats.time).toBeLessThan(40);
   });
 
-  it('a fase 2 (3 cortes) é vencível em menos de 90 s', () => {
+  it('a fase 2 (3 cortes) sai em menos de 40 s esfregando o dedo', () => {
     const r = playLevel(2, 7);
     expect(r.win).toBe(true);
-    expect(r.b.stats.time).toBeLessThan(90);
+    expect(r.b.stats.time).toBeLessThan(40);
+  });
+
+  it('duelo de serra: quem não esfrega perde a linha', () => {
+    const r = playLevel(1, 11, 0);
+    expect(r.win).toBe(false);
+  });
+
+  it('o inimigo aparece e cruza a linha em poucos segundos', () => {
+    const r = playLevel(1, 11);
+    expect(r.b.stats.time).toBeLessThan(8);
   });
 
   it('a loja tem skins com preços crescentes e uma grátis', () => {

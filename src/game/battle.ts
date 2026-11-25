@@ -74,6 +74,20 @@ export interface BattleOptions {
   concurrent?: number;
   /** a vaga 0 traz o chefão */
   boss?: boolean;
+  /** força do cerol do jogador */
+  cerol?: number;
+}
+
+/** Duelo de serra: velocidade do vai e vem (px/s) que vale força 1. */
+export const RUB_FULL = 1700;
+/** Dano por segundo no duelo com força 1 e cerol 1. */
+export const DUEL_K = 0.85;
+/** Defesa do jogador (fração do dano inimigo recebido). */
+export const PLAYER_GUARD = 0.5;
+
+/** Força de serra de um inimigo (cresce com a onda; o chefão é mais forte). */
+export function enemySaw(wave: number, boss: boolean): number {
+  return Math.min(1.25, 0.26 + 0.065 * (wave - 1) + (boss ? 0.25 : 0));
 }
 
 export class BattleRules {
@@ -94,6 +108,22 @@ export class BattleRules {
   bossDown = false;
   /** maior dano que a linha do jogador já levou (para as estrelas) */
   maxDamage = 0;
+  /** duelo de serra em andamento */
+  duel = false;
+  duelTime = 0;
+  /** força atual da sua serra e da do inimigo (0..~1,5), para o HUD */
+  playerSaw = 0;
+  enemySawNow = 0;
+  /** vida da sua linha e da do inimigo no duelo (para o HUD) */
+  duelEnemy = -1;
+  /** onde as pipas ficam presas durante o duelo */
+  holdX = 0;
+  holdY = 0;
+  private burst = 0;
+  private sparkT = 0;
+  private enemyHoldX = new Float32Array(3);
+  private enemyHoldY = new Float32Array(3);
+  private wasInDuel = new Uint8Array(3);
 
   constructor(
     private w: World,
@@ -114,12 +144,11 @@ export class BattleRules {
       w.flyers.push(f);
       pairs.push(0, f.index);
       this.ais.push(null);
-      this.respawn.push(i === 0 ? 1.2 : 99);
+      this.respawn.push(i === 0 ? 0.3 : 99);
     }
-    this.cuts.minLoad = 0.3;
-    this.cuts.kMul = 1.8;
-    // o herói aguenta mais: as linhas inimigas tiram menos da sua
-    w.flyers[0].damageTaken = 0.55;
+    // o corte na Batalha é decidido no duelo de serra (o sistema de corte só detecta os cruzamentos)
+    this.cuts.minLoad = 0;
+    this.cuts.kMul = 0;
     this.cuts.setPairs(pairs);
     const q = w.events;
     const emit: CutEmit = (t, fl, x, y, v, o) => q.push(t, fl, x, y, v, o);
@@ -149,7 +178,7 @@ export class BattleRules {
     f.hidden = false;
     f.name = NAMES[(this.spawnCount + slot * 3) % NAMES.length];
     const boss = !!this.opts.boss && slot === 0 && !this.bossSpawned;
-    f.lineType = boss ? { ...waveLine(this.stats.wave), resistance: 2, name: 'Linha do Rei' } : waveLine(this.stats.wave);
+    f.lineType = boss ? { ...waveLine(this.stats.wave), resistance: 1.6, name: 'Linha do Rei' } : waveLine(this.stats.wave);
     f.visualScale = boss ? 1.7 : 1;
     f.look = {
       model: KITE_MODELS[Math.floor(this.rng() * KITE_MODELS.length)],
@@ -174,7 +203,9 @@ export class BattleRules {
     launchFlyer(f, 58, s.x < p.baseX ? 0.25 : -0.25);
     layLine(f.line, f.handX, f.handY, f.kite.x, f.kite.y, f.kite.z, f.reel.out);
     this.cuts.clearFlyer(f.index);
-    this.ais[slot] = new KiteAI(f, waveDifficulty(this.stats.wave + (boss ? 1 : 0)), 500 + this.spawnCount * 31, w.scene.hazards);
+    const agile = Math.min(1, 0.7 + 0.03 * this.stats.wave + (boss ? 0.15 : 0));
+    this.ais[slot] = new KiteAI(f, waveDifficulty(this.stats.wave + (boss ? 1 : 0)), 500 + this.spawnCount * 31, w.scene.hazards, agile);
+    this.wasInDuel[slot] = 0;
     this.cb.onSpawn(f.name);
   }
 
@@ -189,10 +220,77 @@ export class BattleRules {
   /** Puxão do jogador: a linha "serra" mais forte por um instante. */
   jerk(): void {
     this.boost = 0.6;
+    if (this.duel) this.burst = 0.35;
+  }
+
+  /**
+   * Duelo de serra: com as linhas cruzadas, elas engancham e quem fizer o vai e vem
+   * mais rápido corta. `rub` = velocidade do dedo (px/s).
+   */
+  private stepDuel(dt: number, rub: number): void {
+    const cs = this.cuts.crossings;
+    const p = this.player;
+    let any = false;
+    if (this.burst > 0) this.burst -= dt;
+    const P = Math.min(1.35, rub / RUB_FULL) + (this.burst > 0 ? 0.7 : 0);
+    this.playerSaw += (P - this.playerSaw) * Math.min(1, dt * 12);
+    const cerol = this.opts.cerol ?? 1;
+    let eMax = 0;
+    for (let i = 0; i < cs.length; i++) {
+      const c = cs[i];
+      if (!c.active || c.a !== 0 || c.idle > 0.15) continue;
+      const e = this.w.flyers[c.b];
+      if (!e || e.hidden || !isAlive(e)) continue;
+      any = true;
+      const slot = c.b - 1;
+      const boss = e.visualScale > 1;
+      const wob = 0.85 + 0.3 * (0.5 + 0.5 * Math.sin(this.stats.time * 3.1 + c.b * 1.7));
+      const E = enemySaw(this.stats.wave, boss) * wob;
+      if (E > eMax) eMax = E;
+      c.dmgB += DUEL_K * this.playerSaw * cerol * dt / e.lineType.resistance;
+      c.dmgA += DUEL_K * E * e.lineType.sharpness * PLAYER_GUARD * dt;
+      // engancha: as duas pipas ficam ali brigando
+      if (!this.wasInDuel[slot]) {
+        this.wasInDuel[slot] = 1;
+        this.enemyHoldX[slot] = e.kite.x;
+        this.enemyHoldY[slot] = e.kite.y;
+      }
+      const ai = this.ais[slot];
+      if (ai) ai.hold = true;
+      e.ctrl.assist = 1;
+      e.ctrl.assistX = this.enemyHoldX[slot];
+      e.ctrl.assistY = this.enemyHoldY[slot];
+      this.duelEnemy = c.b;
+      // faíscas proporcionais às serras
+      this.sparkT -= dt * (this.playerSaw + E) * 14;
+      if (this.sparkT <= 0) {
+        this.sparkT = 1;
+        this.w.events.push('spark', 0, c.x, c.y, Math.min(1, (this.playerSaw + E) * 0.5), c.b);
+      }
+    }
+    this.enemySawNow = eMax;
+    if (any && !this.duel) {
+      this.holdX = p.kite.x;
+      this.holdY = p.kite.y;
+      this.duelTime = 0;
+    }
+    if (any) this.duelTime += dt;
+    // fim do duelo: solta as IAs
+    if (!any) {
+      for (let s = 0; s < this.ais.length; s++) {
+        if (!this.wasInDuel[s]) continue;
+        this.wasInDuel[s] = 0;
+        const ai = this.ais[s];
+        if (ai) ai.hold = false;
+      }
+      this.duelEnemy = -1;
+    }
+    this.duel = any;
   }
 
   /** Regras (depois da física). Retorna true quando o jogo acaba de terminar. */
-  step(dt: number): boolean {
+  step(dt: number, rub = 0): boolean {
+    this.stepDuel(dt, rub);
     const st = this.stats;
     if (st.over) return false;
     const p = this.player;
@@ -203,7 +301,6 @@ export class BattleRules {
     }
     if (this.waveBanner > 0) this.waveBanner -= dt;
     if (this.boost > 0) this.boost -= dt;
-    p.sharpMul = this.boost > 0 ? 2.2 : 1;
     // sobreviver também pontua
     this.survivalAcc += dt;
     if (this.survivalAcc >= 1) {
@@ -225,7 +322,8 @@ export class BattleRules {
     for (let i = 0; i < this.ais.length; i++) {
       const f = this.w.flyers[i + 1];
       if (!f.hidden && isAlive(f)) continue;
-      if (!f.hidden && f.status === 'landed' && f.statusTimer > 1.5) f.hidden = true;
+      // pipa cortada cai e some logo: a vaga fica livre rápido (ritmo de arcade)
+      if (!f.hidden && !isAlive(f) && f.statusTimer > 2.2) f.hidden = true;
       if (!f.hidden) continue;
       if (i >= conc) continue;
       if (this.respawn[i] > 50) this.respawn[i] = 1.5 + i * 1.2;
@@ -247,7 +345,7 @@ export class BattleRules {
     const slot = f.index - 1;
     this.ais[slot] = null;
     if (f.visualScale > 1) this.bossDown = byPlayer || this.bossDown;
-    this.respawn[slot] = 2.5;
+    this.respawn[slot] = 1.2;
     if (!byPlayer) return;
     this.combo = this.comboTimer > 0 ? this.combo + 1 : 1;
     this.comboTimer = COMBO_WINDOW;

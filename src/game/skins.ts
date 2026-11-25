@@ -28,3 +28,25 @@ export const SKINS: Skin[] = [
 export function getSkin(id: string): Skin {
   return SKINS.find((s) => s.id === id) ?? SKINS[0];
 }
+
+/** Cerol / linha: quanto maior a força, menos vai e vem é preciso no duelo. */
+export interface Cerol {
+  id: string;
+  name: string;
+  power: number;
+  price: number;
+  color: string;
+  desc: string;
+}
+
+export const CEROLS: Cerol[] = [
+  { id: 'comum', name: 'Linha Comum', power: 1, price: 0, color: '#f4efe2', desc: 'O começo de todo pipeiro.' },
+  { id: 'caseiro', name: 'Cerol Caseiro', power: 1.4, price: 150, color: '#ffe08a', desc: 'Corta 40% mais rápido.' },
+  { id: 'vidro', name: 'Cerol de Vidro', power: 1.9, price: 450, color: '#9ff3ff', desc: 'Quase o dobro de corte.' },
+  { id: 'chilena', name: 'Linha Chilena', power: 2.5, price: 1000, color: '#ff9f6b', desc: 'Para quem manda no céu.' },
+  { id: 'dourada', name: 'Linha Dourada', power: 3.2, price: 2200, color: '#ffd400', desc: 'Lendária. Poucos vai e vens.' },
+];
+
+export function getCerol(id: string): Cerol {
+  return CEROLS.find((c) => c.id === id) ?? CEROLS[0];
+}

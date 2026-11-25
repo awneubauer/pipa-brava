@@ -18,6 +18,8 @@ export interface Settings {
   control: 'easy' | 'pro';
   /** skin equipada (id da loja) */
   skin: string;
+  /** cerol equipado */
+  cerol: string;
 }
 
 /** Progresso de jogo: moedas, estrelas por fase e skins compradas. */
@@ -53,9 +55,10 @@ export function defaultSave(): SaveData {
       unlocked: ['comum'],
       control: 'easy',
       skin: 'raia-vermelha',
+      cerol: 'comum',
     },
     best: {},
-    profile: { coins: 0, stars: [], owned: ['raia-vermelha'], bestEndless: 0 },
+    profile: { coins: 0, stars: [], owned: ['raia-vermelha', 'comum'], bestEndless: 0 },
   };
 }
 
@@ -89,6 +92,8 @@ export function loadSave(): SaveData {
     };
     if (!profile.owned.includes('raia-vermelha')) profile.owned.push('raia-vermelha');
     if (!profile.owned.includes(settings.skin)) settings.skin = 'raia-vermelha';
+    if (!profile.owned.includes('comum')) profile.owned.push('comum');
+    if (typeof settings.cerol !== 'string' || !profile.owned.includes(settings.cerol)) settings.cerol = 'comum';
     if (settings.control !== 'pro') settings.control = 'easy';
     return { settings, best: { ...(parsed.best ?? {}) }, profile };
   } catch {

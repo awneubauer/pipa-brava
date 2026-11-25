@@ -117,7 +117,7 @@ tests/                   testes Vitest
 - `tests/longrun.test.ts` — (b) 10 minutos simulados com comandos aleatórios sem NaN nem explosão da linha.
 - `tests/reel.test.ts` — (d) estoque do carretel nunca negativo nem acima do limite.
 - `tests/maneuvers.test.ts` — manobras do arcade detectadas.
-- `tests/battle.test.ts` — 30 fases com 4 chefões, regras de estrelas e liberação, fases 1 e 2 vencíveis por um jogador simples, controle fácil alcança o dedo em menos de 3 s.
+- `tests/battle.test.ts` — 30 fases com 4 chefões, regras de estrelas e liberação, inimigo cruzando a linha em poucos segundos, fase 2 em menos de 40 s esfregando o dedo, quem não esfrega perde o duelo, controle fácil alcança o dedo em menos de 3 s.
 - `tests/scenes.test.ts` — os 4 cenários rodam 60 s com 3 adversários sem NaN; fio queima na Simulação e só quica no Arcade.
 - `tests/cut.test.ts` — (c) cruzamento entre linhas iguais resolve em 1,5–4 s de deslizamento (lateral, puxando e soltando; 2–4 m/s; tensões 0,4–0,6) e partida completa contra a IA.
 
@@ -127,8 +127,10 @@ tests/                   testes Vitest
 - **Estrelas**: 1 por cumprir o objetivo, +1 por rapidez (ou, em "sobreviva", por cortar 2 pipas), +1 por terminar com a linha quase inteira. Uma estrela libera a próxima fase. A cada 10 estrelas o multiplicador de pontos sobe.
 - **Curva de dificuldade** (`src/game/levels.ts`): 30 fases nos 4 cenários (Várzea 1–8, Favela 9–16, Centro 17–24, Rio 25–30). A força da IA, a afiação das linhas inimigas e quantas pipas voam juntas sobem aos poucos; o fim de cada cenário tem o chefão **Rei do Céu** (maior, mais resistente e mais esperto). A fase 1 é quase impossível de perder.
 - **Moedas e Loja** (`src/game/skins.ts`): moedas por corte (mais em combo), bônus por estrela nova e por fase completada pela primeira vez. Dez skins, até as especiais com rabiola arco-íris, brilho ou fogo.
-- **Ajustes da Batalha para ser fácil e rápida**: dano ×1,8 (cortes em ~1–2 s de cruzamento bem feito), a linha meio frouxa ainda corta, a sua linha aguenta mais (recebe 55% do dano) e o puxão dobra a afiação por 0,6 s. Os perigos do cenário só quicam e a linha não arrebenta por tensão.
-- **Controle fácil** (`src/game/autopilot.ts`): o dedo vira um alvo no céu; o cabresto aponta o bico para lá, uma ajuda de pilotagem leva a pipa até o dedo com inércia (até 20 m/s) e o carretel solta ou recolhe sozinho para alcançar o ponto (dedo alto = mais linha). Sem dedo, a pipa se endireita e sobe.
+- **Duelo de serra** (`src/game/battle.ts`): quando as linhas cruzam, elas enganchadas e as duas pipas ficam presas ali. Aparece "SERRA!" e quem fizer o vai e vem com o dedo mais rápido corta: a sua força é a velocidade do dedo (1700 px/s = força 1, até 1,35) × o seu cerol; a do inimigo cresce com a fase (o chefão é mais forte). Um toque rápido durante o duelo dá um tranco extra. É assim que se ataca e que se defende: se te pegarem, esfregue. Painel mostra a vida das duas linhas e a força das duas serras. Os perigos do cenário só quicam e a linha não arrebenta por tensão.
+- **Cerol (Loja)**: Comum ×1, Caseiro ×1,4, Vidro ×1,9, Chilena ×2,5 e Dourada ×3,2. Quanto mais forte, menos vai e vem para cortar — os chefões das últimas fases pedem cerol melhor.
+- **Ritmo de arcade**: o primeiro inimigo aparece em 0,3 s já atacando, os inimigos também são guiados (voam tão ágeis quanto você), pipa cortada some em ~2 s e a vaga renasce em 1,2 s. Um robô simples corta a cada ~5 s.
+- **Controle fácil** (`src/game/autopilot.ts`): o dedo vira um alvo no céu; o cabresto aponta o bico para lá, uma ajuda de pilotagem leva a pipa até o dedo com inércia (até 30 m/s) e o carretel solta ou recolhe sozinho para alcançar o ponto (dedo alto = mais linha). Sem dedo, a pipa se endireita e sobe.
 - **Salvamento**: moedas, estrelas, skins e recorde do Infinito ficam no `localStorage`.
 
 ## Revisão de jogabilidade (carretel e manobra)

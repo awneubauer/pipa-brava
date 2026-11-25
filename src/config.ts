@@ -102,11 +102,11 @@ export const MODES = {
 /** Ajuda de pilotagem do controle fácil (um dedo). */
 export const ASSIST = {
   /** velocidade máxima guiada (m/s) */
-  maxSpeed: 20,
+  maxSpeed: 30,
   /** velocidade desejada por metro de distância ao dedo (1/s) */
-  approach: 3,
+  approach: 5,
   /** quão rápido a velocidade alcança a desejada (1/s) */
-  gain: 10,
+  gain: 16,
 };
 
 export const REEL = {
@@ -202,7 +202,7 @@ export const CAMERA = {
   maxScale: 26, // px por metro (mais perto)
   minScale: 1.6, // px por metro (mais longe)
   margin: 0.18,
-  follow: 3.2,
+  follow: 4.6,
   zoomFollow: 1.6,
 };
 

@@ -37,22 +37,22 @@ function make(n: number): LevelDef {
   const wave = 1 + (n - 1) * 0.32 - (k === 0 && n > 1 ? 0.6 : 0);
   const conc = n < 3 ? 1 : n < 10 ? 2 : 3;
   const last = k === SCENE_SIZE[si] - 1;
-  if (last) return { n, scene, goal: 'boss', target: 1, time: 90, wave: wave + 0.5, concurrent: Math.min(3, conc), par: 50 };
+  if (last) return { n, scene, goal: 'boss', target: 1, time: 60, wave: wave + 0.5, concurrent: Math.min(3, conc), par: 20 };
   switch (k % 7) {
     case 0:
-      return { n, scene, goal: 'cut', target: n === 1 ? 1 : 2, time: 0, wave: Math.max(1, wave - 0.5), concurrent: 1, par: n === 1 ? 25 : 40 };
+      return { n, scene, goal: 'cut', target: n === 1 ? 1 : 2, time: 0, wave: Math.max(1, wave - 0.5), concurrent: 1, par: n === 1 ? 8 : 15 };
     case 1:
-      return { n, scene, goal: 'cut', target: 3, time: 90, wave, concurrent: Math.min(conc, 2), par: 55 };
+      return { n, scene, goal: 'cut', target: 3, time: 60, wave, concurrent: Math.min(conc, 2), par: 22 };
     case 2:
       return { n, scene, goal: 'survive', target: 35 + Math.min(25, n * 2), time: 35 + Math.min(25, n * 2), wave, concurrent: conc, par: 0 };
     case 3:
-      return { n, scene, goal: 'combo', target: n < 12 ? 2 : 3, time: 90, wave, concurrent: Math.max(2, conc), par: 55 };
+      return { n, scene, goal: 'combo', target: n < 12 ? 2 : 3, time: 60, wave, concurrent: Math.max(2, conc), par: 20 };
     case 4:
-      return { n, scene, goal: 'cut', target: 4, time: 75, wave, concurrent: conc, par: 50 };
+      return { n, scene, goal: 'cut', target: 4, time: 55, wave, concurrent: conc, par: 28 };
     case 5:
       return { n, scene, goal: 'survive', target: 60, time: 60, wave: wave + 0.4, concurrent: 3, par: 0 };
     default:
-      return { n, scene, goal: 'cut', target: 5, time: 80, wave: wave + 0.3, concurrent: conc, par: 55 };
+      return { n, scene, goal: 'cut', target: 5, time: 60, wave: wave + 0.3, concurrent: conc, par: 34 };
   }
 }
 

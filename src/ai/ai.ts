@@ -39,6 +39,8 @@ export class KiteAI {
   private patience: number;
   private hadContact = false;
   private easing = false;
+  /** linhas enganchadas num duelo: a Batalha segura a pipa no lugar */
+  hold = false;
   private safeFloor = 10;
 
   constructor(
@@ -46,6 +48,8 @@ export class KiteAI {
     private diff: Difficulty,
     seed: number,
     hazards: { x0: number; x1: number; y1: number }[] = [],
+    /** modo Batalha: ajuda de pilotagem (0..1) e ataque imediato */
+    private assist = 0,
   ) {
     this.rng = new Rng(seed);
     this.seed = seed;
@@ -54,6 +58,11 @@ export class KiteAI {
     this.tx = self.kite.x;
     this.ty = self.kite.y;
     this.computeFloor(hazards);
+    if (assist > 0) {
+      this.state = 'aproximar';
+      this.patience = 0;
+    }
+    self.ctrl.assist = 0;
   }
 
   private go(s: AiState): void {
@@ -168,11 +177,13 @@ export class KiteAI {
     let tx = this.tx;
     let ty = this.ty;
     // não adianta mirar além do alcance da linha: fica alto enquanto solta
-    const reach = Math.max(8, f.reel.out * 0.62);
-    if (tx > f.baseX + reach) tx = f.baseX + reach;
-    else if (tx < f.baseX - reach) tx = f.baseX - reach;
-    // nunca mirar baixo demais (fios, prédios)
-    const floor = this.safeFloor + 10;
+    if (this.assist <= 0) {
+      const reach = Math.max(8, f.reel.out * 0.62);
+      if (tx > f.baseX + reach) tx = f.baseX + reach;
+      else if (tx < f.baseX - reach) tx = f.baseX - reach;
+    }
+    // nunca mirar baixo demais (fios, prédios); na Batalha o chão do alvo é mais baixo
+    const floor = this.assist > 0 ? f.baseY + 8 : this.safeFloor + 10;
     if (ty < floor) ty = floor;
     const want = Math.atan2(ty - k.y, tx - k.x);
     // se estiver baixo demais, sobe a qualquer custo
@@ -185,6 +196,15 @@ export class KiteAI {
     const wDesired = clamp(err * 2.4 * gain, -3.2, 3.2);
     c.steer = clamp(-(wDesired - k.omega) * 0.55 + noise, -1, 1);
     c.handX = 0;
+    // Batalha: a IA também é guiada (voa tão ágil quanto o jogador) e o carretel acompanha o alvo
+    if (this.assist > 0 && !this.hold) {
+      const rho = Math.hypot(tx - f.handX, ty - f.handY);
+      const wantL = Math.max(15, rho * 1.18 + 3);
+      reel = clamp((wantL - f.reel.out) / 6, -0.8, 0.9);
+      c.assist = this.assist * (this.state === 'fugir' ? 0.8 : 1);
+      c.assistX = tx;
+      c.assistY = ty;
+    } else if (!this.hold) c.assist = 0;
     // a mão da IA se move suave (sem trancos acidentais)
     c.handY += (handY - c.handY) * Math.min(1, dt * 3);
     c.reel += (reel - c.reel) * Math.min(1, dt * 6);

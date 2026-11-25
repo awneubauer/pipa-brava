@@ -75,6 +75,7 @@ export class Hud {
   private tWave = new NumText('ONDA ', '');
   private goalLevel: LevelDef | null = null;
   private goalStr = '';
+  private duelT = 0;
   private reelAngle = 0;
   private lastSpin = 0;
   /** área do botão de pausa (px CSS) */
@@ -478,8 +479,10 @@ export class Hud {
       ctx.fillStyle = '#ffd400';
       ctx.fillText('PUXÃO!', info.cam.toScreenX(p.kite.x), info.cam.toScreenY(p.kite.y) + 34);
     }
+    // duelo de serra
+    if (b.duel) this.drawDuel(ctx, w, info, b);
     // dica nos primeiros segundos
-    if (st.time < 6 && info.easy) {
+    if (st.time < 6 && info.easy && !b.duel) {
       ctx.globalAlpha = Math.min(1, (6 - st.time) / 1.5);
       ctx.fillStyle = 'rgba(20,12,40,0.6)';
       const hw = Math.min(w - 24, 330);
@@ -490,9 +493,67 @@ export class Hud {
       ctx.fillStyle = '#ffffff';
       ctx.fillText('Arraste o dedo: a pipa vai atrás', w / 2, info.cam.h - 80);
       ctx.fillStyle = '#ffe680';
-      ctx.fillText('Cruze a linha das outras • Toque = PUXÃO', w / 2, info.cam.h - 61);
+      ctx.fillText('Cruzou a linha? Esfregue o dedo ↕ rápido!', w / 2, info.cam.h - 61);
       ctx.globalAlpha = 1;
     }
+  }
+
+  /** Painel do duelo: quem serra mais rápido, e a vida das duas linhas. */
+  private drawDuel(ctx: CanvasRenderingContext2D, w: number, info: HudInfo, b: BattleRules): void {
+    const H = info.cam.h;
+    const p = info.player;
+    const e = b.duelEnemy >= 0 ? info.flyers[b.duelEnemy] : null;
+    const pw = Math.min(w - 24, 340);
+    const x0 = (w - pw) / 2;
+    const y0 = H - 150;
+    this.duelT += 0.016;
+    ctx.fillStyle = 'rgba(20,12,40,0.72)';
+    ctx.beginPath();
+    ctx.roundRect(x0, y0, pw, 112, 18);
+    ctx.fill();
+    ctx.textAlign = 'center';
+    ctx.font = F900_22;
+    const pulse = 1 + 0.08 * Math.sin(this.duelT * 18);
+    ctx.save();
+    ctx.translate(w / 2, y0 + 22);
+    ctx.scale(pulse, pulse);
+    ctx.fillStyle = '#ffd400';
+    ctx.fillText('↕ SERRA! ↕', 0, 0);
+    ctx.restore();
+    // vida das linhas (cabo de guerra)
+    const myLife = Math.max(0, 1 - p.damage);
+    const theirLife = e ? Math.max(0, 1 - e.damage) : 1;
+    const bw = pw / 2 - 26;
+    ctx.font = F800_10;
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.fillText('VOCÊ', x0 + 14, y0 + 46);
+    ctx.textAlign = 'right';
+    ctx.fillText(e ? e.name.toUpperCase() : '', x0 + pw - 14, y0 + 46);
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fillRect(x0 + 14, y0 + 54, bw, 12);
+    ctx.fillRect(x0 + pw - 14 - bw, y0 + 54, bw, 12);
+    ctx.fillStyle = myLife > 0.4 ? '#2ed573' : '#ff3b3b';
+    ctx.fillRect(x0 + 14, y0 + 54, bw * myLife, 12);
+    ctx.fillStyle = '#ff4d6d';
+    ctx.fillRect(x0 + pw - 14 - bw * theirLife, y0 + 54, bw * theirLife, 12);
+    // força das serras
+    ctx.font = F800_10;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillText('SUA SERRA', x0 + 14 + bw / 2, y0 + 80);
+    ctx.fillText('SERRA DELE', x0 + pw - 14 - bw / 2, y0 + 80);
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fillRect(x0 + 14, y0 + 88, bw, 8);
+    ctx.fillRect(x0 + pw - 14 - bw, y0 + 88, bw, 8);
+    const ps = Math.min(1, b.playerSaw / 1.35);
+    ctx.fillStyle = ps > b.enemySawNow / 1.35 ? '#7dff5a' : '#ffd400';
+    ctx.fillRect(x0 + 14, y0 + 88, bw * ps, 8);
+    ctx.fillStyle = '#ff8a00';
+    ctx.fillRect(x0 + pw - 14 - bw * Math.min(1, b.enemySawNow / 1.35), y0 + 88, bw * Math.min(1, b.enemySawNow / 1.35), 8);
+    // mãozinha balançando
+    ctx.font = F900_30;
+    ctx.fillText('👆', w / 2, y0 + 70 + Math.sin(this.duelT * 22) * 12);
   }
 
   private lifeBar(ctx: CanvasRenderingContext2D, x: number, y: number, name: string, life: number, alive: boolean): void {

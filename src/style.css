@@ -125,3 +125,11 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; }
 .skin:disabled { opacity: 0.5; }
 .hint { text-align: center; font-size: 13px; color: #ffe680; margin: 4px 0; }
 .coins { color: #ffd400; }
+.cerols { display: flex; flex-direction: column; gap: 8px; }
+.cerol { display: flex; align-items: center; gap: 10px; background: rgba(255, 255, 255, 0.08); border-radius: 14px; padding: 10px 12px; text-align: left; }
+.cerol.sel { box-shadow: inset 0 0 0 3px var(--accent); background: rgba(255, 207, 63, 0.16); }
+.cerol:disabled { opacity: 0.5; }
+.cerol .swl { width: 30px; height: 8px; border-radius: 4px; flex: none; box-shadow: 0 0 8px currentColor; }
+.cerol-txt { flex: 1; display: flex; flex-direction: column; }
+.cerol-txt small { font-size: 12px; opacity: 0.8; }
+.cerol em { font-style: normal; color: #ffe066; font-weight: 800; font-size: 13px; }

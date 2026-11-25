@@ -28,6 +28,7 @@ interface TouchTrack {
   prevY: number;
   /** velocidade suavizada do dedo (px/s) */
   spd: number;
+  prevX: number;
   /** início do toque (ms), para detectar o toque rápido */
   t0: number;
   moved: number;
@@ -62,6 +63,8 @@ export class Input {
   usedPull = 0;
   usedReel = 0;
   usedSteer = 0;
+  /** velocidade do "vai e vem" do dedo (px/s, suavizada) — a serra do duelo */
+  rub = 0;
 
   private tracks: TouchTrack[] = [];
   private keys = new Set<string>();
@@ -74,7 +77,7 @@ export class Input {
 
   constructor(private el: HTMLElement) {
     for (let i = 0; i < MAX_TRACKS; i++)
-      this.tracks.push({ id: -1, zone: 'sky', sx: 0, sy: 0, x: 0, y: 0, lastY: 0, lastT: 0, vy: 0, prevY: 0, spd: 0, t0: 0, moved: 0 });
+      this.tracks.push({ id: -1, zone: 'sky', sx: 0, sy: 0, x: 0, y: 0, lastY: 0, lastT: 0, vy: 0, prevY: 0, spd: 0, t0: 0, moved: 0, prevX: 0 });
     el.addEventListener('pointerdown', this.down, { passive: false });
     window.addEventListener('pointermove', this.move, { passive: false });
     window.addEventListener('pointerup', this.up);
@@ -133,6 +136,7 @@ export class Input {
     t.lastT = performance.now();
     t.vy = 0;
     t.prevY = y;
+    t.prevX = x;
     t.spd = 0;
     // encostar na lata trava a linha
     if (t.zone === 'reel') this.spool = 0;
@@ -208,6 +212,7 @@ export class Input {
     let handY = 0;
     let reel = 0;
     let joy = false;
+    let rubNow = 0;
     this.sky.active = false;
     this.reelTouch.active = false;
     if (this.enabled) {
@@ -215,6 +220,11 @@ export class Input {
         const t = this.tracks[ti];
         if (t.id === -1) continue;
         if (t.zone === 'sky' && this.mode === 'easy') {
+          const ddy = Math.abs(t.y - t.prevY);
+          const ddx = Math.abs(t.x - t.prevX);
+          t.prevY = t.y;
+          t.prevX = t.x;
+          rubNow = dt > 0 ? (ddy + ddx * 0.5) / dt : 0;
           // joystick relativo: a direção do arrasto é para onde a pipa vai
           s.joyX = t.x - t.sx;
           s.joyY = -(t.y - t.sy);
@@ -286,6 +296,8 @@ export class Input {
         this.wheel *= Math.exp(-dt * 3);
       } else this.wheel = 0;
     }
+    // a serra responde rápido mas sem tremer
+    this.rub += (rubNow - this.rub) * Math.min(1, dt * (rubNow > this.rub ? 10 : 6));
     s.joy = joy;
     if (!joy) {
       s.joyX = 0;
