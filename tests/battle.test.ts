@@ -165,6 +165,21 @@ describe('Batalha no Céu (fases)', () => {
     }
   });
 
+  it('segurar RECOLHE traz a linha de volta e a pipa para perto', () => {
+    const env = flatEnv(steadyWind(6.3));
+    const f = makeFlyer(60);
+    const es = createEasyState();
+    run(f, env, 3);
+    const d0 = Math.hypot(f.kite.x - f.handX, f.kite.y - f.handY);
+    for (let i = 0; i < 3 * 60; i++) {
+      startManeuver(es, 'recolhe', 0, 0);
+      easyControl(f, false, 0, 0, false, es, 1 / 60);
+      run(f, env, 1 / 60);
+    }
+    expect(f.reel.out).toBeLessThan(30);
+    expect(Math.hypot(f.kite.x - f.handX, f.kite.y - f.handY)).toBeLessThan(d0 * 0.6);
+  });
+
   it('apertar sem parar (spam) erra e perde', () => {
     const lv = LEVELS[0];
     const w = createWorld(getScene(lv.scene).world(), 'battle', { model: 'raia', color: '#f00', tail: '#ff0' });

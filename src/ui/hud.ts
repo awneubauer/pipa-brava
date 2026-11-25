@@ -424,14 +424,37 @@ export class Hud {
     ctx.font = F900_15;
     ctx.textAlign = 'center';
     ctx.fillText(duel ? 'CORTA!' : input.state.hold ? 'LINHA!' : 'PUXA!', a.x, a.y + 1);
+    // botão RECOLHE (segurar) e metros de linha fora
+    if (!duel) {
+      const rb = input.reelBtn;
+      ctx.fillStyle = rb.down ? 'rgba(120,220,255,0.95)' : 'rgba(46,160,213,0.82)';
+      ctx.beginPath();
+      ctx.arc(rb.x, rb.y, rb.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = F800_10;
+      ctx.textAlign = 'center';
+      ctx.fillText('RECOLHE', rb.x, rb.y + 7);
+      ctx.font = F900_15;
+      ctx.fillText('⤓', rb.x, rb.y - 7);
+      ctx.font = F800_10;
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillText(this.tLine.get(info.player.reel.out), rb.x, rb.y - rb.r - 9);
+    }
     if (!duel && info.battle.stats.time < 20) {
       // cola dos comandos acima do botão
       ctx.font = F800_10;
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
       ctx.textAlign = 'right';
-      ctx.fillText('1x  puxada (dispara)', a.x + a.r, a.y - a.r - 44);
-      ctx.fillText('2x  EMBICADA (na mira)', a.x + a.r, a.y - a.r - 30);
-      ctx.fillText('segure  dar linha (foge)', a.x + a.r, a.y - a.r - 16);
+      const rb2 = input.reelBtn;
+      const cx = rb2.x - rb2.r - 10;
+      ctx.fillText('segure RECOLHE  traz a pipa', cx, rb2.y + 4);
+      ctx.fillText('PUXA! 1x  puxada (sobe)', a.x - a.r - 10, a.y - 22);
+      ctx.fillText('2x  EMBICADA (na mira)', a.x - a.r - 10, a.y - 8);
+      ctx.fillText('segure  dar linha (foge)', a.x - a.r - 10, a.y + 6);
     }
   }
 
@@ -563,13 +586,13 @@ export class Hud {
       ctx.fillStyle = 'rgba(20,12,40,0.6)';
       const hw = Math.min(w - 24, 330);
       ctx.beginPath();
-      ctx.roundRect((w - hw) / 2, info.cam.h - 96 - 140, hw, 50, 14);
+      ctx.roundRect((w - hw) / 2, info.cam.h - 96 - 230, hw, 50, 14);
       ctx.fill();
       ctx.font = F800_12;
       ctx.fillStyle = '#ffffff';
-      ctx.fillText('Polegar esquerdo pilota a pipa', w / 2, info.cam.h - 220);
+      ctx.fillText('Polegar esquerdo pilota a pipa', w / 2, info.cam.h - 310);
       ctx.fillStyle = '#ffe680';
-      ctx.fillText('Mire e dê 2 toques no PUXA! = embicada', w / 2, info.cam.h - 201);
+      ctx.fillText('Mire e dê 2 toques no PUXA! = embicada', w / 2, info.cam.h - 291);
       ctx.globalAlpha = 1;
     }
   }

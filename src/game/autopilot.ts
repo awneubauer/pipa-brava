@@ -11,7 +11,7 @@ import { clamp, wrapAngle } from '../util/noise';
  * - toque rápido = puxão: tranco + recolhida rápida, a pipa dispara.
  * A física é a mesma do modo Pro; só a mão do jogador é ajudada.
  */
-export type Maneuver = 'none' | 'puxada' | 'embicada' | 'linha';
+export type Maneuver = 'none' | 'puxada' | 'embicada' | 'linha' | 'recolhe';
 
 export interface EasyState {
   /** tempo restante do recolhimento rápido depois de um puxão */
@@ -36,7 +36,7 @@ export function createEasyState(): EasyState {
  */
 export function startManeuver(st: EasyState, m: Maneuver, mx: number, my: number): void {
   st.move = m;
-  st.moveT = m === 'puxada' ? 0.45 : m === 'embicada' ? 0.6 : 0.15;
+  st.moveT = m === 'puxada' ? 0.45 : m === 'embicada' ? 0.6 : 0.12;
   st.mx = mx;
   st.my = my;
 }
@@ -80,6 +80,15 @@ export function easyControl(
       ty = k.y + st.my * 12;
       c.assistBoost = 0.9;
       forceReel = 0.8;
+    } else if (st.move === 'recolhe') {
+      // recolhe a linha rápido: a pipa vem na direção da mão
+      const dx = f.handX - k.x;
+      const dy = f.handY + 12 - k.y;
+      const d = Math.hypot(dx, dy) || 1;
+      tx = k.x + (dx / d) * 10;
+      ty = k.y + (dy / d) * 10;
+      c.assistBoost = 1.1;
+      forceReel = L > 14 ? -1 : 0;
     }
     if (st.moveT <= 0) st.move = 'none';
   }

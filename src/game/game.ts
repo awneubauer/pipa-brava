@@ -521,6 +521,7 @@ export class Game {
       const ty = p.kite.y + (c.joyY / JOY_MAX) * 14;
       const inDuel = !!this.battle && this.battle.duel;
       if (!inDuel) this.maneuvers(p, jerk, dbl, c.hold);
+      if (!inDuel && c.reelIn) startManeuver(this.easy, 'recolhe', 0, 0);
       if (inDuel) easyControl(p, true, (this.battle as BattleRules).holdX, (this.battle as BattleRules).holdY, false, this.easy, PHYSICS.dt);
       else easyControl(p, on, tx, ty, false, this.easy, PHYSICS.dt);
     } else {

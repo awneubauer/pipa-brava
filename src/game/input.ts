@@ -15,11 +15,13 @@ export interface ControlState {
   /** botão PUXA!: segundo toque rápido (embicada) e segurando (dar linha) */
   double: boolean;
   hold: boolean;
+  /** botão RECOLHE segurado */
+  reelIn: boolean;
 }
 
 interface TouchTrack {
   id: number;
-  zone: 'sky' | 'reel' | 'action';
+  zone: 'sky' | 'reel' | 'action' | 'reelin';
   sx: number;
   sy: number;
   x: number;
@@ -50,7 +52,7 @@ export const JOY_MAX = 64;
  * Desktop: mouse no céu, W/S ou roda = carretel, espaço = puxão, A/D = curva.
  */
 export class Input {
-  readonly state: ControlState = { steer: 0, handX: 0, handY: 0, reel: 0, jerk: false, joyX: 0, joyY: 0, joy: false, double: false, hold: false };
+  readonly state: ControlState = { steer: 0, handX: 0, handY: 0, reel: 0, jerk: false, joyX: 0, joyY: 0, joy: false, double: false, hold: false, reelIn: false };
   /** 'easy': um dedo guia a pipa (joystick no céu, toque = puxão); 'pro': cabresto + lata */
   mode: 'easy' | 'pro' = 'easy';
   /** largura da faixa do carretel (px CSS) */
@@ -70,6 +72,8 @@ export class Input {
   usedSteer = 0;
   /** modo fácil: botão de ação (px CSS) e se está pressionado */
   readonly actionBtn = { x: 0, y: 0, r: 46, down: false };
+  /** modo fácil: botão RECOLHE (acima do PUXA!) */
+  readonly reelBtn = { x: 0, y: 0, r: 34, down: false };
   private lastAction = 0;
 
   private tracks: TouchTrack[] = [];
@@ -100,6 +104,9 @@ export class Input {
     this.actionBtn.r = Math.max(40, Math.min(54, w * 0.12));
     this.actionBtn.x = w - this.actionBtn.r - 22;
     this.actionBtn.y = h - this.actionBtn.r - 34 - bottomInset;
+    this.reelBtn.r = Math.round(this.actionBtn.r * 0.72);
+    this.reelBtn.x = this.actionBtn.x - 6;
+    this.reelBtn.y = this.actionBtn.y - this.actionBtn.r - this.reelBtn.r - 18;
   }
 
   resize(w: number): void {
@@ -139,8 +146,10 @@ export class Input {
     if (!t) return;
     t.id = e.pointerId;
     t.zone = this.mode === 'pro' && x > this.w - this.reelWidth ? 'reel' : 'sky';
-    // modo fácil: botão PUXA! no canto inferior direito
-    if (this.mode === 'easy' && Math.hypot(x - this.actionBtn.x, y - this.actionBtn.y) < this.actionBtn.r + 16) {
+    // modo fácil: botão RECOLHE (segurar) e PUXA! no canto inferior direito
+    if (this.mode === 'easy' && Math.hypot(x - this.reelBtn.x, y - this.reelBtn.y) < this.reelBtn.r + 10) {
+      t.zone = 'reelin';
+    } else if (this.mode === 'easy' && Math.hypot(x - this.actionBtn.x, y - this.actionBtn.y) < this.actionBtn.r + 16) {
       t.zone = 'action';
       const now = performance.now();
       // segundo toque em até 0,3 s = embicada; senão = puxada
@@ -249,13 +258,21 @@ export class Input {
     let reel = 0;
     let joy = false;
     let hold = false;
+    let reelIn = false;
     this.sky.active = false;
     this.actionBtn.down = false;
+    this.reelBtn.down = false;
     this.reelTouch.active = false;
     if (this.enabled) {
       for (let ti = 0; ti < this.tracks.length; ti++) {
         const t = this.tracks[ti];
         if (t.id === -1) continue;
+        if (t.zone === 'reelin') {
+          this.reelBtn.down = true;
+          reelIn = true;
+          this.usedReel += dt;
+          continue;
+        }
         if (t.zone === 'action') {
           this.actionBtn.down = true;
           // segurando o botão por mais de 0,35 s = dar linha
@@ -342,6 +359,7 @@ export class Input {
     }
     s.joy = joy;
     s.hold = hold || this.keys.has('shift');
+    s.reelIn = reelIn || this.keys.has('r') || this.keys.has('q');
     if (!joy) {
       s.joyX = 0;
       s.joyY = 0;
