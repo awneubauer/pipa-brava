@@ -1,7 +1,7 @@
 import { KiteAI } from '../ai/ai';
 import { COLORS, KITE_MODELS, type Difficulty, type LineType } from '../config';
 import { CutSystem, type CutEmit, type Crossing } from '../physics/cut';
-import { createFlyer, isAlive, launchFlyer, type Flyer } from '../physics/flyer';
+import { createFlyer, isAlive, launchFlyer, severLine, type Flyer } from '../physics/flyer';
 import { layLine } from '../physics/line';
 import type { World } from '../physics/world';
 
@@ -25,7 +25,13 @@ export interface BattleStats {
   over: boolean;
 }
 
+/** quanto da VIDA cada ponto de dano no duelo tira */
+export const HP_PER_DAMAGE = 0.4;
+/** vida devolvida pelo passarinho */
+export const BIRD_HEAL = 0.3;
+
 export interface BattleCallbacks {
+  onBird?: (x: number, y: number) => void;
   /** corte feito pelo jogador: pontos ganhos, combo, moedas */
   onCut: (points: number, combo: number, coins: number, x: number, y: number) => void;
   onWave: (wave: number, bonus: number) => void;
@@ -104,6 +110,10 @@ export class BattleRules {
   bossDown = false;
   /** maior dano que a linha do jogador já levou (para as estrelas) */
   maxDamage = 0;
+  /** VIDA da partida (0..1): todo corte que você leva tira daqui; zerou = fim */
+  hp = 1;
+  /** passarinho de vida */
+  readonly bird = { active: false, x: 0, y: 0, y0: 0, vx: 0, t: 0, timer: 10 };
   /** duelo em andamento (linhas enganchadas) */
   duel = false;
   duelTime = 0;
@@ -310,7 +320,7 @@ export class BattleRules {
       const ev = Math.hypot(e.kite.vx, e.kite.vy);
       this.initiative = this.surprise || this.boost > 0 || pv > ev * 1.1 ? 'voce' : 'ele';
       if (this.initiative === 'voce') c.dmgB += 0.15 / e.lineType.resistance;
-      else c.dmgA += 0.08 + 0.02 * this.stats.wave * PLAYER_GUARD;
+      else this.hurt(c, 0.08 + 0.02 * this.stats.wave * PLAYER_GUARD);
       this.duel = true;
       this.duelEnemy = c.b;
       this.duelTime = 0;
@@ -344,7 +354,7 @@ export class BattleRules {
     }
     // pressão: quem enrola perde linha aos poucos
     const E = enemySaw(this.stats.wave, boss);
-    c.dmgA += (0.04 + 0.1 * E * e.lineType.sharpness) * PLAYER_GUARD * 2 * dt;
+    this.hurt(c, (0.04 + 0.1 * E * e.lineType.sharpness) * PLAYER_GUARD * 2 * dt);
     // engancha as duas pipas
     const ai = this.ais[slot];
     if (ai) ai.hold = true;
@@ -357,6 +367,50 @@ export class BattleRules {
       this.w.events.push('spark', 0, c.x, c.y, 0.4, c.b);
     }
     this.duelCross = c;
+  }
+
+  /** Dano na sua linha: conta no duelo atual e na VIDA da partida (que não volta sozinha). */
+  private hurt(c: Crossing, amount: number): void {
+    c.dmgA += amount;
+    this.hp -= amount * HP_PER_DAMAGE;
+    if (this.hp <= 0) {
+      this.hp = 0;
+      // a vida acabou: a linha arrebenta ali mesmo, mesmo com o duelo não terminado
+      c.dmgA = Math.max(c.dmgA, 1.01);
+    }
+  }
+
+  /** Passarinho de vida: atravessa o céu de vez em quando; encostar nele devolve vida. */
+  private stepBird(dt: number): void {
+    const p = this.player;
+    const bd = this.bird;
+    if (!bd.active) {
+      bd.timer -= dt * (this.hp < 0.5 ? 1.8 : 1);
+      if (bd.timer <= 0 && this.hp < 0.999) {
+        bd.active = true;
+        const dir = this.rng() < 0.5 ? 1 : -1;
+        bd.vx = dir * (6 + this.rng() * 3);
+        bd.x = p.kite.x - dir * 45;
+        bd.y0 = Math.max(p.baseY + 12, p.kite.y + (this.rng() * 2 - 1) * 12);
+        bd.y = bd.y0;
+        bd.t = 0;
+      }
+      return;
+    }
+    bd.t += dt;
+    bd.x += bd.vx * dt;
+    bd.y = bd.y0 + Math.sin(bd.t * 2.2) * 2.5;
+    if (isAlive(p) && Math.hypot(p.kite.x - bd.x, p.kite.y - bd.y) < 2.6) {
+      this.hp = Math.min(1, this.hp + BIRD_HEAL);
+      bd.active = false;
+      bd.timer = 14 + this.rng() * 8;
+      this.cb.onBird?.(bd.x, bd.y);
+      return;
+    }
+    if (bd.t > 12) {
+      bd.active = false;
+      bd.timer = 8 + this.rng() * 6;
+    }
   }
 
   /** Zona verde sempre no centro: a dificuldade vem da velocidade do marcador. */
@@ -394,7 +448,7 @@ export class BattleRules {
       this.newZone();
     } else {
       const E = enemySaw(this.stats.wave, e.visualScale > 1);
-      c.dmgA += 0.14 * E * e.lineType.sharpness * PLAYER_GUARD * 2;
+      this.hurt(c, 0.14 * E * e.lineType.sharpness * PLAYER_GUARD * 2);
       r = 'erro';
     }
     this.feedback = r;
@@ -422,7 +476,13 @@ export class BattleRules {
       this.survivalAcc -= 1;
       st.score += 5 * this.mult;
     }
-    if (p.damage > this.maxDamage) this.maxDamage = p.damage;
+    if (1 - this.hp > this.maxDamage) this.maxDamage = 1 - this.hp;
+    // vida zerada fora de um cruzamento visível: a linha arrebenta do mesmo jeito
+    if (this.hp <= 0 && isAlive(p)) {
+      severLine(p, Math.floor(p.line.n * 0.5), 'cut');
+      this.w.events.push('cut', 0, p.kite.x, p.kite.y, 1, this.duelEnemy > 0 ? this.duelEnemy : 1);
+    }
+    this.stepBird(dt);
     if (!isAlive(p)) {
       st.over = true;
       return true;

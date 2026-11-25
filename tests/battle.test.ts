@@ -192,6 +192,45 @@ describe('Batalha no Céu (fases)', () => {
     expect(Math.hypot(f.kite.x - f.handX, f.kite.y - f.handY)).toBeLessThan(d0 * 0.6);
   });
 
+  it('VIDA da partida: não volta entre duelos, zerou = fim mesmo no meio do duelo; passarinho devolve vida', () => {
+    const lv = LEVELS[0];
+    const w = createWorld(getScene(lv.scene).world(), 'battle', { model: 'raia', color: '#f00', tail: '#ff0' });
+    const b = new BattleRules(w, 1, { onCut: () => {}, onWave: () => {}, onSpawn: () => {} }, { fixedWave: 1, concurrent: 1 });
+    const p = w.flyers[0];
+    const es = createEasyState();
+    const tick = () => {
+      easyControl(p, false, 0, 0, false, es, PHYSICS.dt);
+      b.think(PHYSICS.dt);
+      stepWorld(w);
+      w.events.clear();
+      b.step(PHYSICS.dt);
+    };
+    // passarinho: com a vida pela metade, encostar nele devolve vida
+    b.hp = 0.5;
+    tick();
+    b.bird.active = true;
+    b.bird.x = p.kite.x;
+    b.bird.y0 = b.bird.y = p.kite.y;
+    b.bird.vx = 0;
+    b.bird.t = 0;
+    tick();
+    expect(b.hp).toBeGreaterThan(0.75);
+    expect(b.bird.active).toBe(false);
+    // vida zerada: a linha arrebenta mesmo sem o duelo acabar
+    b.hp = 0.001;
+    (b as unknown as { duel: boolean }).duel = true;
+    (b as unknown as { tapCooldown: number }).tapCooldown = 0;
+    (b as unknown as { duelCross: unknown }).duelCross = { b: 1, dmgA: 0, dmgB: 0 };
+    b.marker = 0;
+    b.zoneC = 0.5;
+    b.zoneHW = 0.05;
+    expect(b.duelTap()).toBe('erro');
+    (b as unknown as { duel: boolean }).duel = false;
+    tick();
+    expect(b.hp).toBe(0);
+    expect(isAlive(p)).toBe(false);
+  });
+
   it('apertar sem parar (spam) erra e perde', () => {
     const lv = LEVELS[0];
     const w = createWorld(getScene(lv.scene).world(), 'battle', { model: 'raia', color: '#f00', tail: '#ff0' });

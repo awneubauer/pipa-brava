@@ -298,6 +298,12 @@ export class Game {
             this.audio.victory();
           },
           onSpawn: () => {},
+          onBird: (x, y) => {
+            this.popups.show('+VIDA!', '', x, y + 2, false, 1.2, '#7dff5a', 26, 'pop');
+            this.fx.burst(PKind.Confetti, x, y, 24, 6, 1.2, 4);
+            this.audio.maneuver(3);
+            this.vibrate([20, 30, 20]);
+          },
         },
         lv
           ? { fixedWave: lv.wave, concurrent: lv.concurrent, boss: lv.goal === 'boss', cerol: getCerol(st.cerol).power }

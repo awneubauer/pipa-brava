@@ -463,7 +463,6 @@ export class Hud {
     const b = info.battle as BattleRules;
     const st = b.stats;
     const lv = info.level;
-    const p = info.player;
     const panelW = w - reelW - 16;
     // barras dos inimigos sobre as pipas
     const fl = info.flyers;
@@ -540,15 +539,51 @@ export class Hud {
       ctx.fillText(this.tCoins.get(st.coins), panelW, top + 38);
       ctx.textAlign = 'left';
     }
-    // vida da linha
+    // VIDA da partida (não volta entre os duelos)
     ctx.font = F800_10;
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    ctx.fillText('SUA LINHA', 18, top + 62);
-    const life = Math.max(0, 1 - p.damage);
+    const hp = b.hp;
+    const low = hp < 0.3;
+    ctx.fillStyle = low && Math.sin(this.duelT * 30) > 0 ? '#ff6b6b' : 'rgba(255,255,255,0.75)';
+    ctx.fillText('VIDA', 18, top + 62);
     ctx.fillStyle = 'rgba(255,255,255,0.18)';
-    ctx.fillRect(80, top + 57, panelW - 90, 10);
-    ctx.fillStyle = life > 0.6 ? '#2ed573' : life > 0.3 ? '#ffd400' : '#ff3b3b';
-    ctx.fillRect(80, top + 57, (panelW - 90) * life, 10);
+    ctx.fillRect(56, top + 57, panelW - 66, 10);
+    ctx.fillStyle = hp > 0.6 ? '#2ed573' : hp > 0.3 ? '#ffd400' : '#ff3b3b';
+    ctx.fillRect(56, top + 57, (panelW - 66) * hp, 10);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = F800_10;
+    ctx.fillText('❤', 44, top + 62);
+    // passarinho de vida
+    if (b.bird.active) {
+      const bx = info.cam.toScreenX(b.bird.x);
+      const by = info.cam.toScreenY(b.bird.y);
+      const dir = b.bird.vx > 0 ? 1 : -1;
+      const flap = Math.sin(b.bird.t * 14) * 7;
+      ctx.fillStyle = '#fff3d6';
+      ctx.beginPath();
+      ctx.ellipse(bx, by, 9, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(bx + dir * 8, by - 3, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ff9f1a';
+      ctx.beginPath();
+      ctx.moveTo(bx + dir * 12, by - 4);
+      ctx.lineTo(bx + dir * 17, by - 2);
+      ctx.lineTo(bx + dir * 12, by - 1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#fff3d6';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(bx - 2, by - 2);
+      ctx.lineTo(bx - dir * 8, by - 10 - flap);
+      ctx.stroke();
+      ctx.font = F900_15;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ff4d6d';
+      ctx.fillText('❤', bx, by - 16 + Math.sin(b.bird.t * 4) * 2);
+      ctx.textAlign = 'left';
+    }
     // combo e puxão
     ctx.textAlign = 'center';
     if (b.combo > 1 && b.comboTimer > 0 && !b.duel) {
@@ -616,7 +651,7 @@ export class Hud {
     ctx.font = F800_10;
     ctx.textAlign = 'left';
     ctx.fillStyle = '#ffffff';
-    ctx.fillText('VOCÊ', x0 + 12, y0 + 12);
+    ctx.fillText('ESTA BRIGA', x0 + 12, y0 + 12);
     ctx.textAlign = 'right';
     ctx.fillText(e ? e.name.toUpperCase() : '', x0 + pw - 12, y0 + 12);
     ctx.fillStyle = 'rgba(255,255,255,0.15)';
