@@ -60,9 +60,9 @@ function world(): SceneWorld {
     ground: () => 0,
     launch: { x: 0, y: 1.35 },
     opponents: [
-      { x: -55, y: 1.35 },
-      { x: 60, y: 1.35 },
-      { x: -105, y: 1.35 },
+      { x: -30, y: 1.35 },
+      { x: 34, y: 1.35 },
+      { x: 62, y: 1.35 },
     ],
     hazards: hazards(),
     minX: -260,

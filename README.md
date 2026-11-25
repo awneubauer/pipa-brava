@@ -37,9 +37,24 @@ Modo debug: abra com `?debug=1` (fps, tensão, vento, posição, hitboxes).
 - **Sem alocação no loop.** Vetores escalares, `Float32Array`, pools de partículas e textos, fontes e strings do HUD em cache. Camadas de cenário são pré-renderizadas em pedaços (≤ 2048 px) e desenhadas com `drawImage`.
 - **Câmera** segue a pipa e a mão com suavização exponencial, ajusta o zoom para manter linha e adversários visíveis e treme em rajadas fortes.
 
+## Decisões técnicas (Fase 2 — Simulação)
+
+- **Corte.** A cada subpasso, as linhas são testadas segmento × segmento (com caixas envolventes para descartar rápido). Cada cruzamento vira um registro persistente (casado por proximidade entre passos) que acumula o dano das duas linhas:
+  `dano = k × afiação do outro × S(deslizamento) × √(menor tensão) × concentração × dt / resistência`.
+  - **Deslizamento** = velocidade relativa entre os *materiais* das duas linhas no ponto de contato; inclui a linha saindo/entrando no carretel (o material perto da mão corre na velocidade do carretel). Por isso **soltar linha** e **puxar com força** cortam: as duas técnicas reais funcionam.
+  - **Concentração** (0,7 a 1,3): quem faz a própria linha correr pelo cruzamento espalha o desgaste e concentra no outro. Linhas paradas = 1.
+  - **Risco**: soltar demais deixa a linha frouxa (sem tensão não corta) e a pipa cai na janela; puxar com força leva a tensão ao vermelho (1,1 s no vermelho ou um pico sustentado arrebenta a linha).
+  - S(v) satura (`2,5·tanh(v/1,5)`) e `k = 0,26`: um duelo entre linhas iguais resolve em 1,5–4 s de deslizamento ativo (teste `tests/cut.test.ts`). Duelos completos contra a IA ficam entre ~8 e 25 s.
+  - Ao passar de 1, a linha rompe no nó do cruzamento; sem contato o dano esfria devagar depois de 1 s.
+- **Tipos de linha**: Comum (afiação 1,0), Afiada (1,35) e Super afiada (1,75). Os adversários escalam com a dificuldade; o jogador começa na Comum e libera a Afiada vencendo na Média e a Super afiada vencendo na Brava.
+- **IA** (`src/ai/ai.ts`): máquina de estados patrulhar → aproximar (posição acima e do lado da própria mão) → engajar (atravessa a linha do jogador e alterna soltar com a linha esticada / puxar) → fugir (dano próprio > 0,6) → recompor. A dificuldade muda tempo de reação, agressividade e erro de pilotagem. A IA respeita a própria tensão (histerese), mira dentro do alcance da linha e mantém uma altura segura acima dos perigos.
+- **Feedback de corte**: faíscas no cruzamento, brilho crescente na linha danificada, câmera lenta de 0,6 s a 0,3×, tremor, vibração, flash e textos "CORTOU!" / "FOI CORTADO!". A pipa cortada perde a tensão, vira com o vento, balança e desce até o chão.
+- **Derrota**: linha cortada, arrebentada, pipa queimada no fio, rasgada, ou estoque zerado com a pipa presa (enroscada ou cruzada) por 2 s.
+
 ## Testes
 
 - `tests/flight.test.ts` — (a) voo estável com vento de 3 a 9 m/s, voo com rajadas, loop e puxão.
 - `tests/longrun.test.ts` — (b) 10 minutos simulados com comandos aleatórios sem NaN nem explosão da linha.
 - `tests/reel.test.ts` — (d) estoque do carretel nunca negativo nem acima do limite.
 - `tests/maneuvers.test.ts` — manobras do arcade detectadas.
+- `tests/cut.test.ts` — (c) cruzamento entre linhas iguais resolve em 1,5–4 s de deslizamento (lateral, puxando e soltando; 2–4 m/s; tensões 0,4–0,6) e partida completa contra a IA.

@@ -30,10 +30,10 @@ export const PHYSICS = {
   /** Comprimento mínimo de linha fora do carretel (m). */
   minLineOut: 2.5,
   /** Velocidade máxima do braço do jogador (m/s) e alcance (m). */
-  armSpeed: 7,
+  armSpeed: 3.2,
   armReach: 0.9,
   /** Puxão: deslocamento extra da mão (m) e duração (s). */
-  jerkDistance: 1.25,
+  jerkDistance: 0.85,
   jerkDuration: 0.25,
 };
 

@@ -63,6 +63,8 @@ export interface Flyer {
   jerkTimer: number;
   tension: number;
   tension01: number;
+  /** tensão filtrada (~60 ms): trancos instantâneos não arrebentam sozinhos */
+  strain: number;
   redTimer: number;
   status: FlyerStatus;
   statusTimer: number;
@@ -126,6 +128,7 @@ export function createFlyer(
     jerkTimer: 0,
     tension: 0,
     tension01: 0,
+    strain: 0,
     redTimer: 0,
     status: 'flying',
     statusTimer: 0,
@@ -218,7 +221,7 @@ export function stepFlyer(f: Flyer, env: FlyerEnv, dt: number): void {
     tx -= rx * PHYSICS.jerkDistance * e01;
     ty -= ry * PHYSICS.jerkDistance * e01;
     tz -= rz * PHYSICS.jerkDistance * e01;
-    armSpeed *= 2.4;
+    armSpeed *= 1.8;
   }
   {
     const dx = tx - f.handX;
@@ -358,7 +361,8 @@ export function stepFlyer(f: Flyer, env: FlyerEnv, dt: number): void {
     } else {
       f.redTimer = Math.max(0, f.redTimer - dt * 2);
     }
-    if (env.lineBreaks && attached && (f.tension01 >= 1.3 || f.redTimer > TENSION.redBreakTime)) {
+    f.strain += (f.tension01 - f.strain) * Math.min(1, dt / 0.06);
+    if (env.lineBreaks && attached && (f.strain >= 1.3 || f.redTimer > TENSION.redBreakTime)) {
       severLine(f, f.line.n - 3, 'snapped');
       env.emit('snap', f.index, k.x, k.y, 0);
     }

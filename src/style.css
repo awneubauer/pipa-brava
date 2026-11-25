@@ -101,3 +101,6 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; }
 .tut-hand { position: fixed; z-index: 4; font-size: 40px; pointer-events: none; filter: drop-shadow(0 3px 4px rgba(0,0,0,0.5)); }
 #rotate { display: none; position: fixed; inset: 0; z-index: 50; background: var(--bg); align-items: center; justify-content: center; font-size: 22px; font-weight: 800; text-align: center; padding: 30px; }
 @media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) { #rotate { display: flex; } }
+.simopts { margin-top: 6px; }
+.simopts h3 { text-align: center; }
+.small-note { font-size: 12px; margin: 6px 0 0; }

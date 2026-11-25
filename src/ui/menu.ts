@@ -1,4 +1,4 @@
-import { GAME_TITLE, SAFETY_TEXT, type ModeId } from '../config';
+import { DIFFICULTIES, GAME_TITLE, LINE_TYPES, SAFETY_TEXT, type DifficultyId, type LineTypeId, type ModeId } from '../config';
 import type { GameResult } from '../game/game';
 import type { SaveData } from '../game/state';
 import { bestKey, writeSave } from '../game/state';
@@ -63,7 +63,9 @@ export class Menu {
       <p class="sub">Solte o carretel, sinta o vento.</p>
       <div class="modes">
         <button class="mode ${this.mode === 'arcade' ? 'sel' : ''}" data-mode="arcade"><b>Arcade</b><small>Manobras, combos e estrelas. Sem perigo.</small></button>
+        <button class="mode ${this.mode === 'sim' ? 'sel' : ''}" data-mode="sim"><b>Simulação</b><small>Corte a linha dos adversários.</small></button>
       </div>
+      ${this.mode === 'sim' ? this.simOptions() : ''}
       <h2>Cenário</h2>
       <div class="scenes">${cards}</div>
       <button class="big play" data-action="play">Soltar pipa!</button>
@@ -71,6 +73,28 @@ export class Menu {
         <button class="small" data-action="help">Como jogar</button>
       </div>
     </div>`);
+  }
+
+  private simOptions(): string {
+    const s = this.save().settings;
+    const opp = [1, 2, 3].map((n) => `<button class="chip ${s.opponents === n ? 'sel' : ''}" data-opp="${n}">${n}</button>`).join('');
+    const diff = (Object.keys(DIFFICULTIES) as DifficultyId[])
+      .map((d) => `<button class="chip ${s.difficulty === d ? 'sel' : ''}" data-diff="${d}">${DIFFICULTIES[d].name}</button>`)
+      .join('');
+    const lines = (Object.keys(LINE_TYPES) as LineTypeId[])
+      .map((l) => {
+        const locked = !s.unlocked.includes(l);
+        return `<button class="chip ${s.playerLine === l ? 'sel' : ''}" data-line="${l}" ${locked ? 'disabled' : ''}>${locked ? '🔒 ' : ''}${LINE_TYPES[l].name}</button>`;
+      })
+      .join('');
+    const d = DIFFICULTIES[s.difficulty];
+    return `<div class="simopts">
+      <h3>Adversários</h3><div class="chips">${opp}</div>
+      <h3>Dificuldade</h3><div class="chips">${diff}</div>
+      <p class="muted small-note">Linha deles: ${LINE_TYPES[d.line].name}</p>
+      <h3>Sua linha</h3><div class="chips">${lines}</div>
+      <p class="muted small-note">Vença na Média para liberar a Afiada; na Brava, a Super afiada.</p>
+    </div>`;
   }
 
   help(): void {
@@ -99,6 +123,10 @@ export class Menu {
   }
 
   summary(r: GameResult): void {
+    if (r.sim) {
+      this.simSummary(r);
+      return;
+    }
     const best = this.save().best[bestKey(r.mode, r.scene)] ?? 0;
     const min = Math.floor(r.time / 60);
     const sec = Math.floor(r.time % 60);
@@ -118,6 +146,31 @@ export class Menu {
     </div>`);
   }
 
+  private simSummary(r: GameResult): void {
+    const sim = r.sim!;
+    const best = this.save().best[bestKey(r.mode, r.scene)] ?? 0;
+    const min = Math.floor(sim.time / 60);
+    const sec = Math.floor(sim.time % 60);
+    const win = sim.outcome === 'win';
+    const title = win ? 'Vitória!' : sim.outcome === 'lose' ? 'Derrota' : 'Fim de jogo';
+    const unlocked = r.unlocked ? `<p class="record">Linha ${LINE_TYPES[r.unlocked].name} liberada!</p>` : '';
+    this.show(`<div class="panel summary">
+      <p class="result-title ${win ? 'win' : 'lose'}">${title}</p>
+      <p class="muted">${esc(sim.reason || 'Você saiu da partida.')}</p>
+      ${unlocked}
+      <ul class="stats">
+        <li><span>Tempo</span><b>${min}:${String(sec).padStart(2, '0')}</b></li>
+        <li><span>Cortes</span><b>${sim.cuts}</b></li>
+        <li><span>Linha restante</span><b>${Math.round(sim.lineLeft).toLocaleString('pt-BR')} m</b></li>
+        <li><span>Dificuldade</span><b>${DIFFICULTIES[r.difficulty].name}</b></li>
+        <li><span>Pontos</span><b>${sim.score.toLocaleString('pt-BR')}${r.best ? ' (recorde!)' : ''}</b></li>
+        <li><span>Recorde do cenário</span><b>${best.toLocaleString('pt-BR')}</b></li>
+      </ul>
+      <button class="big play" data-action="restart">${win ? 'Jogar de novo' : 'Revanche'}</button>
+      <button class="big alt" data-action="home">Menu</button>
+    </div>`);
+  }
+
   private onClick(e: Event): void {
     const t = (e.target as HTMLElement).closest('button');
     if (!t) return;
@@ -125,6 +178,27 @@ export class Menu {
     const sc = t.getAttribute('data-scene');
     if (sc) {
       data.settings.scene = sc as SceneId;
+      writeSave(data);
+      this.home();
+      return;
+    }
+    const opp = t.getAttribute('data-opp');
+    if (opp) {
+      data.settings.opponents = Number(opp);
+      writeSave(data);
+      this.home();
+      return;
+    }
+    const diff = t.getAttribute('data-diff');
+    if (diff) {
+      data.settings.difficulty = diff as DifficultyId;
+      writeSave(data);
+      this.home();
+      return;
+    }
+    const ln = t.getAttribute('data-line');
+    if (ln) {
+      if (data.settings.unlocked.includes(ln as LineTypeId)) data.settings.playerLine = ln as LineTypeId;
       writeSave(data);
       this.home();
       return;

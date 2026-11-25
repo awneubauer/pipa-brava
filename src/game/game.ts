@@ -1,4 +1,4 @@
-import { PHYSICS, SLOWMO, TENSION, type ModeId } from '../config';
+import { PHYSICS, SLOWMO, TENSION, type DifficultyId, type LineTypeId, type ModeId } from '../config';
 import { isAlive, type Flyer } from '../physics/flyer';
 import { createWorld, stepWorld, type World } from '../physics/world';
 import { PKind, Particles, Popups } from '../render/effects';
@@ -10,7 +10,8 @@ import { Camera } from './camera';
 import { Input } from './input';
 import { FixedLoop } from './loop';
 import { MANEUVERS, ManeuverTracker } from './maneuvers';
-import { loadSave, recordBest, type SaveData } from './state';
+import { SimRules, type SimResult } from './sim';
+import { loadSave, recordBest, writeSave, type SaveData } from './state';
 
 export interface GameResult {
   mode: ModeId;
@@ -22,6 +23,10 @@ export interface GameResult {
   loops: number;
   bestCombo: number;
   time: number;
+  sim: SimResult | null;
+  difficulty: DifficultyId;
+  /** linha liberada nesta partida (se houver) */
+  unlocked: LineTypeId | null;
 }
 
 export interface GameHooks {
@@ -41,6 +46,10 @@ export class Game {
   readonly loop: FixedLoop;
   save: SaveData;
   world: World | null = null;
+  sim: SimRules | null = null;
+  private ended = false;
+  private oppList: Flyer[] = [];
+  private endDelay = 0;
   scene: SceneDef | null = null;
   mode: ModeId = 'arcade';
   snaps: FlyerSnapshot[] = [];
@@ -117,7 +126,11 @@ export class Game {
     const st = this.save.settings;
     const w = createWorld(scene.world(), mode, { model: st.model, color: st.color, tail: st.tail }, st.playerLine);
     this.world = w;
+    this.sim = mode === 'sim' ? new SimRules(w, st.opponents, st.difficulty) : null;
+    this.ended = false;
+    this.endDelay = 0;
     this.snaps = w.flyers.map(() => createSnapshot(PHYSICS.lineNodes));
+    this.oppList = w.flyers.slice(1);
     for (let i = 0; i < w.flyers.length; i++) takeSnapshot(this.snaps[i], w.flyers[i]);
     this.renderer.setScene(scene.art());
     this.fx.clear();
@@ -160,7 +173,9 @@ export class Game {
     const scene = this.scene;
     this.paused = true;
     this.input.enabled = false;
-    const score = this.tracker.score;
+    const simRes = this.sim ? this.sim.result() : null;
+    const score = simRes ? simRes.score : this.tracker.score;
+    const st = this.save.settings;
     const r: GameResult = {
       mode: this.mode,
       scene: scene ? scene.id : 'varzea',
@@ -171,8 +186,20 @@ export class Game {
       loops: this.tracker.counts.loop,
       bestCombo: this.tracker.bestCombo,
       time: this.playTime,
+      sim: simRes,
+      difficulty: st.difficulty,
+      unlocked: null,
     };
-    if (w && scene) r.best = recordBest(this.save, this.mode, scene.id, score);
+    if (w && scene && score > 0) r.best = recordBest(this.save, this.mode, scene.id, score);
+    // vitórias liberam linhas melhores
+    if (simRes && simRes.outcome === 'win') {
+      const unlock: LineTypeId | null = st.difficulty === 'media' ? 'afiada' : st.difficulty === 'brava' ? 'super' : null;
+      if (unlock && !st.unlocked.includes(unlock)) {
+        st.unlocked.push(unlock);
+        r.unlocked = unlock;
+        writeSave(this.save);
+      }
+    }
     return r;
   }
 
@@ -209,10 +236,27 @@ export class Game {
     p.ctrl.reel = c.reel;
     if (this.input.takeJerk()) p.ctrl.jerk = true;
 
+    if (this.sim) this.sim.think(PHYSICS.dt);
     for (let i = 0; i < w.flyers.length; i++) takeSnapshot(this.snaps[i], w.flyers[i]);
     stepWorld(w);
     this.playTime += PHYSICS.dt;
     this.handleEvents(w);
+    if (this.sim) {
+      if (this.sim.judge(PHYSICS.dt)) {
+        this.ended = true;
+        this.endDelay = this.sim.outcome === 'win' ? 2.2 : 3;
+        const win = this.sim.outcome === 'win';
+        this.popups.show(win ? 'VITÓRIA!' : 'FIM DE JOGO', this.sim.reason, this.w * 0.42, this.h * 0.3, true, 3, win ? '#7dff5a' : '#ff6b6b', 40, 'banner');
+      }
+      if (this.ended) {
+        this.endDelay -= PHYSICS.dt;
+        if (this.endDelay <= 0) {
+          this.ended = false;
+          this.hooks.onExit(this.finish());
+          return;
+        }
+      }
+    }
 
     if (this.mode === 'arcade') {
       const hit = this.tracker.update(p, w.scene.ground(p.kite.x), PHYSICS.dt);
@@ -239,6 +283,8 @@ export class Game {
 
   private handleEvents(w: World): void {
     const ev = w.events;
+    const W = this.w;
+    const H = this.h;
     for (let i = 0; i < ev.count; i++) {
       const e = ev.items[i];
       const f = w.flyers[e.flyer];
@@ -250,6 +296,61 @@ export class Game {
             this.vibrate(25);
           }
           this.fx.burst(PKind.Confetti, e.x, e.y, 6, 2, 0.6, 2);
+          break;
+        case 'spark':
+          this.fx.burst(PKind.Spark, e.x, e.y, 2 + Math.round(e.value * 5), 6 + e.value * 6, 0.35, Math.floor(Math.random() * 3));
+          break;
+        case 'cut': {
+          const mine = f.isPlayer;
+          const byMe = e.other === 0;
+          this.fx.burst(PKind.Spark, e.x, e.y, 40, 14, 0.7, 0);
+          this.fx.burst(PKind.Spark, e.x, e.y, 20, 8, 0.9, 1);
+          this.slowmo = SLOWMO.duration;
+          this.loop.timeScale = SLOWMO.scale;
+          this.camera.shake(9);
+          this.flash = 0.5;
+          this.vibrate(mine ? [90, 40, 140] : [60, 30, 60]);
+          if (mine) this.popups.show('FOI CORTADO!', 'Sua pipa foi embora...', W * 0.42, H * 0.3, true, 2.4, '#ff6b6b', 40, 'banner');
+          else if (byMe) {
+            const left = this.sim ? this.sim.aliveOpponents() : 0;
+            this.popups.show('CORTOU!', left > 0 ? 'Faltam ' + left : 'Céu limpo!', W * 0.42, H * 0.3, true, 2.2, '#ffd400', 46, 'banner');
+          }
+          break;
+        }
+        case 'snap':
+          this.fx.burst(PKind.Spark, e.x, e.y, 10, 5, 0.4, 2);
+          this.camera.shake(6);
+          if (f.isPlayer) {
+            this.vibrate([80, 40, 80]);
+            this.popups.show('ARREBENTOU!', 'Tensão demais na linha', W * 0.42, H * 0.3, true, 2.2, '#ff6b6b', 38, 'banner');
+          } else this.popups.show('Arrebentou!', '', e.x, e.y, false, 1.4, '#ffd400', 22, 'pop');
+          break;
+        case 'burn':
+          this.fx.burst(PKind.Zap, e.x, e.y, 30, 12, 0.5, 0);
+          for (let k = 0; k < 12; k++) this.fx.spawn(PKind.Smoke, e.x, e.y, (Math.random() - 0.5) * 2, Math.random() * 2, 1.6 + Math.random());
+          this.camera.shake(8);
+          this.flash = 0.35;
+          if (f.isPlayer) {
+            this.vibrate([40, 30, 40, 30, 120]);
+            this.popups.show('QUEIMOU NO FIO!', 'Fio de luz não perdoa', W * 0.42, H * 0.3, true, 2.4, '#9ff3ff', 36, 'banner');
+          } else this.popups.show('Queimou!', '', e.x, e.y, false, 1.4, '#9ff3ff', 22, 'pop');
+          break;
+        case 'tear':
+          this.fx.burst(PKind.Shred, e.x, e.y, 24, 5, 1.4, 4);
+          this.camera.shake(6);
+          if (f.isPlayer) {
+            this.vibrate([70, 30, 70]);
+            this.popups.show('RASGOU!', 'Bateu forte demais', W * 0.42, H * 0.3, true, 2.2, '#ff8a00', 38, 'banner');
+          }
+          break;
+        case 'snag':
+          if (f.isPlayer) {
+            this.vibrate(40);
+            this.popups.show('ENROSCOU!', 'Puxe a linha por 3 s', W * 0.42, H * 0.34, true, 2.2, '#ffd400', 30, 'banner');
+          }
+          break;
+        case 'freed':
+          if (f.isPlayer) this.popups.show('Soltou!', '', e.x, e.y + 1, false, 1.2, '#fff', 18, 'balloon');
           break;
         default:
           break;
@@ -303,6 +404,10 @@ export class Game {
     info.windSpeed = Math.hypot(p.windX, p.windZ);
     info.windAngle = Math.atan2(p.windX, p.windZ);
     info.time = this.playTime;
+    if (this.sim) {
+      info.opponents = this.oppList;
+      info.aliveOpponents = this.sim.aliveOpponents();
+    }
     info.debug = null;
     if (this.debug) {
       this.debugTimer -= realDt;
@@ -327,8 +432,19 @@ export class Game {
       'pipa ' + k.x.toFixed(1) + ', ' + k.y.toFixed(1) + ', z ' + k.z.toFixed(1),
       'vel ' + Math.hypot(k.vx, k.vy, k.vz).toFixed(1) + '  α ' + ((p.alpha * 180) / Math.PI).toFixed(0) + '°',
       'linha ' + p.reel.out.toFixed(1) + ' m  carretel ' + p.reel.rate.toFixed(1) + ' m/s',
-      'status ' + p.status,
+      'status ' + p.status + '  estoque ' + (p.reel.stock - p.reel.out).toFixed(0) + ' m',
     ];
+    if (this.sim) {
+      const cs = this.sim.cuts.crossings;
+      for (let i = 0; i < cs.length; i++) {
+        const c = cs[i];
+        if (!c.active) continue;
+        lines.push(
+          'cruz ' + c.a + '×' + c.b + ' desl ' + c.slide.toFixed(1) + ' m/s  dano ' + c.dmgA.toFixed(2) + '/' + c.dmgB.toFixed(2) + '  taxa ' + c.rateA.toFixed(2) + '/' + c.rateB.toFixed(2),
+        );
+      }
+      for (let i = 0; i < this.sim.ais.length; i++) lines.push('IA ' + w.flyers[i + 1].name + ': ' + this.sim.ais[i].state + '  T ' + w.flyers[i + 1].tension01.toFixed(2));
+    }
     return lines.join('\n');
   }
 }

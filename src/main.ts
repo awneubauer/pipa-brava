@@ -15,7 +15,10 @@ const game = new Game(canvas, {
     game.pause();
     menu.pause();
   },
-  onExit: (r) => menu.summary(r),
+  onExit: (r) => {
+    game.pause();
+    menu.summary(r);
+  },
 });
 
 const menu = new Menu(() => game.save, {
