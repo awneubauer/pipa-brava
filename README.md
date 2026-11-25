@@ -26,7 +26,7 @@ Modo debug: abra com `?debug=1` — fps, resolução, tempo de física e de rend
 2. Framework: **Vite** (detectado automaticamente). Build: `npm run build`. Saída: `dist`.
 3. Não precisa de variáveis de ambiente. Clique em **Deploy**.
 
-Cada push num branch gera um *Preview Deployment* com URL própria — é por ela que dá para testar cada fase no celular.
+Cada push num branch gera um *Preview Deployment* com URL própria — é por ela que dá para testar cada fase no celular. O deploy de *Production* usa o branch `main`: enquanto o jogo não for mesclado na `main`, o link de produção mostra 404 e o jogo fica no link do preview do branch (aba **Deployments** do projeto).
 
 ## Testar no celular
 
