@@ -1,4 +1,5 @@
 import { PHYSICS, SLOWMO, TENSION, type DifficultyId, type LineTypeId, type ModeId } from '../config';
+import { GameAudio } from '../audio/audio';
 import { isAlive, type Flyer } from '../physics/flyer';
 import { createWorld, stepWorld, type World } from '../physics/world';
 import { PKind, Particles, Popups } from '../render/effects';
@@ -29,6 +30,8 @@ export interface GameResult {
   unlocked: LineTypeId | null;
 }
 
+const DPR_LEVELS = [2, 1.6, 1.3, 1];
+
 export interface GameHooks {
   onPause: () => void;
   onExit: (r: GameResult) => void;
@@ -43,6 +46,9 @@ export class Game {
   readonly fx = new Particles();
   readonly popups = new Popups();
   readonly tracker = new ManeuverTracker();
+  readonly audio = new GameAudio();
+  private scrapeCooldown = 0;
+  private readonly audioFrame = { wind: 0, airspeed: 0, tension: 0, reel: 0, red: false, active: false };
   readonly loop: FixedLoop;
   save: SaveData;
   world: World | null = null;
@@ -65,6 +71,12 @@ export class Game {
   private h = 0;
   private hudInfo: HudInfo;
   private debugText = '';
+  /** qualidade adaptativa: baixa a resolução se o aparelho não segurar ~60 fps */
+  private quality = 0;
+  private stepMs = 0;
+  private renderMs = 0;
+  private perfAcc = 0;
+  private perfFrames = 0;
   private debugTimer = 0;
 
   constructor(
@@ -77,10 +89,20 @@ export class Game {
     this.debug = /[?&]debug=1/.test(location.search);
     this.renderer.debug = this.debug;
     this.loop = new FixedLoop(
-      () => this.fixedStep(),
-      (a, dt) => this.frame(a, dt),
+      () => {
+        const t0 = performance.now();
+        this.fixedStep();
+        this.stepMs += (performance.now() - t0 - this.stepMs) * 0.05;
+      },
+      (a, dt) => {
+        const t0 = performance.now();
+        this.frame(a, dt);
+        this.renderMs += (performance.now() - t0 - this.renderMs) * 0.05;
+      },
     );
     this.input.onPause = () => this.hooks.onPause();
+    this.input.onFirstGesture = () => this.unlockAudio();
+    this.audio.setEnabled(this.save.settings.sound);
     this.hudInfo = {
       mode: 'arcade',
       player: null as unknown as Flyer,
@@ -105,7 +127,7 @@ export class Game {
     const h = Math.round(vv ? vv.height : window.innerHeight);
     this.w = w;
     this.h = h;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = Math.min(DPR_LEVELS[this.quality], window.devicePixelRatio || 1);
     this.canvas.style.width = w + 'px';
     this.canvas.style.height = h + 'px';
     this.renderer.resize(w, h, dpr);
@@ -115,7 +137,11 @@ export class Game {
     this.hud.safeTop = safeTop;
     this.hud.layout(w, this.input.reelWidth);
     const pb = this.hud.pauseBtn;
-    this.input.blockers = [{ x: pb.x - 6, y: pb.y - 6, w: pb.w + 12, h: pb.h + 12 }];
+    const mb = this.hud.muteBtn;
+    this.input.blockers = [
+      { x: pb.x - 6, y: pb.y - 6, w: pb.w + 12, h: pb.h + 12 },
+      { x: mb.x - 6, y: mb.y - 6, w: mb.w + 12, h: mb.h + 12 },
+    ];
   }
 
   /** Começa uma partida. */
@@ -203,6 +229,17 @@ export class Game {
     return r;
   }
 
+  unlockAudio(): void {
+    this.audio.unlock();
+    this.audio.setEnabled(this.save.settings.sound);
+  }
+
+  setSound(on: boolean): void {
+    this.save.settings.sound = on;
+    writeSave(this.save);
+    this.audio.setEnabled(on);
+  }
+
   vibrate(ms: number | number[]): void {
     if (!this.save.settings.vibration) return;
     try {
@@ -246,6 +283,8 @@ export class Game {
         this.ended = true;
         this.endDelay = this.sim.outcome === 'win' ? 2.2 : 3;
         const win = this.sim.outcome === 'win';
+        if (win) this.audio.victory();
+        else this.audio.defeat();
         this.popups.show(win ? 'VITÓRIA!' : 'FIM DE JOGO', this.sim.reason, this.w * 0.42, this.h * 0.3, true, 3, win ? '#7dff5a' : '#ff6b6b', 40, 'banner');
       }
       if (this.ended) {
@@ -266,6 +305,7 @@ export class Game {
         this.popups.show(m.name, sub, this.w * 0.42, this.h * 0.34, true, 1.6, m.color, 38, 'pop');
         this.fx.burst(PKind.Confetti, p.kite.x, p.kite.y, 26, 7, 1.4, Math.floor(Math.random() * 8));
         this.vibrate(18);
+        this.audio.maneuver(hit.combo);
       }
     }
 
@@ -296,15 +336,21 @@ export class Game {
             this.vibrate(25);
           }
           this.fx.burst(PKind.Confetti, e.x, e.y, 6, 2, 0.6, 2);
+          if (f.isPlayer) this.audio.bump();
           break;
         case 'spark':
           this.fx.burst(PKind.Spark, e.x, e.y, 2 + Math.round(e.value * 5), 6 + e.value * 6, 0.35, Math.floor(Math.random() * 3));
+          if (this.scrapeCooldown <= 0) {
+            this.audio.scrape(e.value);
+            this.scrapeCooldown = 0.07;
+          }
           break;
         case 'cut': {
           const mine = f.isPlayer;
           const byMe = e.other === 0;
           this.fx.burst(PKind.Spark, e.x, e.y, 40, 14, 0.7, 0);
           this.fx.burst(PKind.Spark, e.x, e.y, 20, 8, 0.9, 1);
+          this.audio.snapCut();
           this.slowmo = SLOWMO.duration;
           this.loop.timeScale = SLOWMO.scale;
           this.camera.shake(9);
@@ -318,6 +364,7 @@ export class Game {
           break;
         }
         case 'snap':
+          this.audio.snapBreak();
           this.fx.burst(PKind.Spark, e.x, e.y, 10, 5, 0.4, 2);
           this.camera.shake(6);
           if (f.isPlayer) {
@@ -326,6 +373,7 @@ export class Game {
           } else this.popups.show('Arrebentou!', '', e.x, e.y, false, 1.4, '#ffd400', 22, 'pop');
           break;
         case 'burn':
+          this.audio.shock();
           this.fx.burst(PKind.Zap, e.x, e.y, 30, 12, 0.5, 0);
           for (let k = 0; k < 12; k++) this.fx.spawn(PKind.Smoke, e.x, e.y, (Math.random() - 0.5) * 2, Math.random() * 2, 1.6 + Math.random());
           this.camera.shake(8);
@@ -336,6 +384,7 @@ export class Game {
           } else this.popups.show('Queimou!', '', e.x, e.y, false, 1.4, '#9ff3ff', 22, 'pop');
           break;
         case 'tear':
+          this.audio.tear();
           this.fx.burst(PKind.Shred, e.x, e.y, 24, 5, 1.4, 4);
           this.camera.shake(6);
           if (f.isPlayer) {
@@ -345,6 +394,7 @@ export class Game {
           break;
         case 'snag':
           if (f.isPlayer) {
+            this.audio.bump();
             this.vibrate(40);
             this.popups.show('ENROSCOU!', 'Puxe a linha por 3 s', W * 0.42, H * 0.34, true, 2.2, '#ffd400', 30, 'banner');
           }
@@ -385,6 +435,32 @@ export class Game {
       this.loop.timeScale = this.slowmo > 0 ? SLOWMO.scale : 1;
     }
     if (this.flash > 0) this.flash -= realDt * 2.5;
+    if (this.scrapeCooldown > 0) this.scrapeCooldown -= realDt;
+    if (!this.paused && !this.attract) {
+      this.perfAcc += realDt;
+      this.perfFrames++;
+      if (this.perfAcc > 3) {
+        const fps = this.perfFrames / this.perfAcc;
+        this.perfAcc = 0;
+        this.perfFrames = 0;
+        if (fps < 48 && this.quality < DPR_LEVELS.length - 1 && DPR_LEVELS[this.quality] > 1 && (window.devicePixelRatio || 1) > 1) {
+          this.quality++;
+          this.resize();
+        }
+      }
+    }
+    {
+      const p0 = w.flyers[0];
+      const af = this.audioFrame;
+      const live = !this.paused && !this.attract && isAlive(p0);
+      af.active = !this.paused && !this.attract;
+      af.wind = Math.hypot(p0.windX, p0.windZ);
+      af.airspeed = live ? p0.airspeed : 0;
+      af.tension = live ? p0.tension01 : 0;
+      af.reel = live ? p0.reel.rate : 0;
+      af.red = live && p0.tension01 > TENSION.red;
+      this.audio.update(af);
+    }
     this.frameCamera(false);
     this.camera.update(realDt);
     if (!this.paused) this.popups.update(realDt);
@@ -409,6 +485,7 @@ export class Game {
       info.aliveOpponents = this.sim.aliveOpponents();
     }
     info.debug = null;
+    this.hud.muted = !this.save.settings.sound;
     if (this.debug) {
       this.debugTimer -= realDt;
       if (this.debugTimer <= 0) {
@@ -426,7 +503,7 @@ export class Game {
     const p = w.flyers[0];
     const k = p.kite;
     const lines = [
-      'fps ' + this.loop.fps.toFixed(0) + '  t ' + w.time.toFixed(1),
+      'fps ' + this.loop.fps.toFixed(0) + '  dpr ' + this.renderer.dpr.toFixed(2) + '  física ' + this.stepMs.toFixed(2) + ' ms  render ' + this.renderMs.toFixed(2) + ' ms',
       'tensão ' + p.tension.toFixed(1) + ' N (' + p.tension01.toFixed(2) + ')',
       'vento ' + p.windX.toFixed(1) + ', ' + p.windY.toFixed(1) + ', ' + p.windZ.toFixed(1) + '  raj ' + p.windGust.toFixed(2),
       'pipa ' + k.x.toFixed(1) + ', ' + k.y.toFixed(1) + ', z ' + k.z.toFixed(1),

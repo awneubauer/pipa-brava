@@ -26,6 +26,8 @@ export interface MenuHooks {
   toMenu: () => void;
   /** cenário escolhido no menu mudou (atualiza o fundo animado) */
   sceneChanged?: (scene: SceneId) => void;
+  /** liga/desliga o som */
+  sound: (on: boolean) => void;
 }
 
 function esc(s: string): string {
@@ -87,8 +89,14 @@ export class Menu {
       <div class="row">
         <button class="small" data-action="custom">Personalizar pipa</button>
         <button class="small" data-action="help">Como jogar</button>
+        ${this.soundBtn()}
       </div>
     </div>`);
+  }
+
+  private soundBtn(): string {
+    const on = this.save().settings.sound;
+    return `<button class="small ${on ? 'on' : ''}" data-action="sound">${on ? '🔊 Som ligado' : '🔇 Som desligado'}</button>`;
   }
 
   private simOptions(): string {
@@ -205,6 +213,7 @@ export class Menu {
       <button class="big" data-action="resume">Continuar</button>
       <button class="big alt" data-action="restart">Recomeçar</button>
       <button class="big alt" data-action="quit">Sair</button>
+      <div class="row">${this.soundBtn()}</div>
       <p class="safety">${esc(SAFETY_TEXT)}</p>
     </div>`);
   }
@@ -328,6 +337,11 @@ export class Menu {
       case 'custom':
         this.custom();
         break;
+      case 'sound': {
+        this.hooks.sound(!data.settings.sound);
+        t.outerHTML = this.soundBtn();
+        break;
+      }
       case 'home':
         this.hooks.toMenu();
         break;

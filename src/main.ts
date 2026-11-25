@@ -56,6 +56,7 @@ const menu = new Menu(() => game.save, {
     menu.summary(r);
   },
   sceneChanged: (scene) => game.startAttract(scene),
+  sound: (on) => game.setSound(on),
   toMenu: () => {
     tutorial.stop();
     game.startAttract(game.save.settings.scene);
@@ -63,10 +64,18 @@ const menu = new Menu(() => game.save, {
   },
 });
 
-// botão de pausa desenhado no HUD
+// o áudio só pode começar depois de um gesto do usuário
+const unlock = (): void => game.unlockAudio();
+document.addEventListener('pointerdown', unlock, { capture: true });
+document.addEventListener('keydown', unlock, { capture: true });
+
+// botões de pausa e silenciar desenhados no HUD
+const inside = (b: { x: number; y: number; w: number; h: number }, e: PointerEvent): boolean =>
+  e.clientX >= b.x - 6 && e.clientX <= b.x + b.w + 6 && e.clientY >= b.y - 6 && e.clientY <= b.y + b.h + 6;
 canvas.addEventListener('pointerdown', (e) => {
-  const b = game.hud.pauseBtn;
-  if (e.clientX >= b.x - 6 && e.clientX <= b.x + b.w + 6 && e.clientY >= b.y - 6 && e.clientY <= b.y + b.h + 6) pauseGame();
+  if (!game.world || game.paused) return;
+  if (inside(game.hud.pauseBtn, e)) pauseGame();
+  else if (inside(game.hud.muteBtn, e)) game.setSound(!game.save.settings.sound);
 });
 
 document.addEventListener('visibilitychange', () => {
@@ -76,3 +85,12 @@ document.addEventListener('visibilitychange', () => {
 // cenário de fundo animado atrás do menu
 game.startAttract(game.save.settings.scene);
 menu.home();
+
+// PWA: registra o service worker só no build de produção
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {
+      /* sem SW o jogo funciona normalmente */
+    });
+  });
+}

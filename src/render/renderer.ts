@@ -63,6 +63,8 @@ function createTail(): TailSim {
 }
 
 const CHUNK_PX = 2048;
+const DASH = [4, 4];
+const NO_DASH: number[] = [];
 
 const POP_FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 const fontCache = new Map<number, string>();
@@ -528,11 +530,11 @@ export class Renderer {
     if (f.status === 'snagged') {
       ctx.strokeStyle = '#ffd400';
       ctx.lineWidth = 2;
-      ctx.setLineDash([4, 4]);
+      ctx.setLineDash(DASH);
       ctx.beginPath();
       ctx.arc(0, 0, halfPx * 1.25, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, f.freeProgress / 3));
       ctx.stroke();
-      ctx.setLineDash([]);
+      ctx.setLineDash(NO_DASH);
     }
     ctx.restore();
     // indicador de tensão vermelha (pisca)
@@ -583,7 +585,8 @@ export class Renderer {
     const ctx = this.ctx;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    for (const p of popups.items) {
+    for (let pi = 0; pi < popups.items.length; pi++) {
+      const p = popups.items[pi];
       if (p.life <= 0 || p.screen !== screenOnly) continue;
       const t = 1 - p.life / p.max;
       let x = p.x;

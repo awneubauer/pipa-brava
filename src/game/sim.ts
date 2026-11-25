@@ -1,6 +1,6 @@
 import { KiteAI } from '../ai/ai';
 import { COLORS, DIFFICULTIES, KITE_MODELS, LINE_TYPES, type DifficultyId } from '../config';
-import { CutSystem } from '../physics/cut';
+import { CutSystem, type CutEmit } from '../physics/cut';
 import { createFlyer, isAlive, launchFlyer, type Flyer } from '../physics/flyer';
 import type { World } from '../physics/world';
 
@@ -57,8 +57,10 @@ export class SimRules {
     }
     this.cuts.reset();
     this.cuts.setPairs(pairs);
-    const emit = w.events;
-    w.post.push((world, dt) => this.cuts.step(world.flyers, dt, (t, fl, x, y, v, o) => emit.push(t, fl, x, y, v, o)));
+    const q = w.events;
+    // funções criadas uma vez (nada é alocado durante a simulação)
+    const emit: CutEmit = (t, fl, x, y, v, o) => q.push(t, fl, x, y, v, o);
+    w.post.push((world, dt) => this.cuts.step(world.flyers, dt, emit));
   }
 
   get player(): Flyer {

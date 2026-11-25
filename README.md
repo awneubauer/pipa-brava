@@ -1,19 +1,38 @@
 # Pipa Brava
 
-Jogo de soltar pipa para celular (retrato) e desktop, feito com **Vite + TypeScript + Canvas 2D**, sem engine e sem assets externos: todo o visual é desenhado por código.
+Jogo de soltar pipa para celular (retrato, tela cheia) e desktop, feito com **Vite + TypeScript + Canvas 2D**, sem engine de jogo e sem assets externos: todo o visual é desenhado por código e todo o áudio é sintetizado com Web Audio. Tudo em português do Brasil.
 
-> O título é provisório e fica em uma única constante: `GAME_TITLE` em `src/config.ts`.
+> O título é provisório e fica em uma única constante: `GAME_TITLE` em `src/config.ts` (o `<title>` e o manifest do PWA são gerados a partir dela).
+
+- **Arcade** (para crianças): sem cortes e sem derrota, manobras com combos e estrelas (loop, rasante, zigue-zague, recorde de altura, pairar na rajada), pipa e rabiola personalizáveis.
+- **Simulação**: você contra 1, 2 ou 3 pipas da IA (Fácil, Média, Brava). Corte a linha delas sem ter a sua cortada, sem queimar no fio e sem arrebentar a linha de tanta tensão.
+- **4 cenários**: Favela no morro, Campo de várzea, Centro de São Paulo e Rio de Janeiro, cada um com vento e perigos próprios.
 
 ## Como rodar
 
 ```bash
 npm install
-npm run dev      # servidor local (abre na rede local com --host)
+npm run dev      # servidor local; com --host já abre na rede local (para testar no celular)
 npm test         # testes (Vitest)
-npm run build    # gera dist/
+npm run build    # checa tipos e gera dist/
+npm run preview  # serve o dist/ (também com --host)
 ```
 
-Modo debug: abra com `?debug=1` (fps, tensão, vento, posição, hitboxes).
+Modo debug: abra com `?debug=1` — fps, resolução, tempo de física e de render, tensão, vento, posição, dano e taxa de dano por cruzamento, estado de cada IA e hitboxes dos perigos.
+
+## Publicar na Vercel
+
+1. Na Vercel, **Add New → Project** e importe este repositório do GitHub.
+2. Framework: **Vite** (detectado automaticamente). Build: `npm run build`. Saída: `dist`.
+3. Não precisa de variáveis de ambiente. Clique em **Deploy**.
+
+Cada push num branch gera um *Preview Deployment* com URL própria — é por ela que dá para testar cada fase no celular.
+
+## Testar no celular
+
+- **Pelo preview da Vercel**: abra a URL do deploy no navegador do celular, na vertical. Para jogar em tela cheia, use "Adicionar à tela inicial" (Android: menu do Chrome → *Instalar app*; iPhone: Compartilhar → *Adicionar à Tela de Início*).
+- **Na rede local**: `npm run dev` e abra no celular o endereço `http://IP-do-computador:5173` que o Vite mostra (mesmo Wi-Fi).
+- O som só começa depois do primeiro toque (regra dos navegadores). A vibração depende do aparelho (no iPhone o navegador não vibra).
 
 ## Controles
 
@@ -21,9 +40,28 @@ Modo debug: abra com `?debug=1` (fps, tensão, vento, posição, hitboxes).
 | --- | --- | --- |
 | Girar a pipa (deslocar o cabresto) | arrastar no céu para os lados | mouse arrastando / A e D |
 | Puxar linha / dar linha | arrastar no céu para baixo / para cima | mouse arrastando / Shift puxa |
-| Puxão | arrasto rápido para baixo | espaço |
+| Puxão (pico de tensão por 0,25 s) | arrasto rápido para baixo | espaço |
 | Soltar linha | faixa da direita: arrastar para baixo | S / roda do mouse para baixo |
 | Recolher | faixa da direita: arrastar para cima | W / roda do mouse para cima |
+| Pausa / som | botões no canto superior direito | Esc ou P / botão de som |
+
+Curva leve faz a pipa segurar um rumo inclinado; curva total faz loop. A linha só corre do carretel quando a pipa puxa: dar uns puxões enquanto solta faz a linha sair bem mais rápido.
+
+## Estrutura
+
+```
+src/config.ts            constantes de ajuste (título, física, linhas, dificuldades)
+src/main.ts              montagem: jogo, menus, tutorial, PWA
+src/game/                loop (passo fixo), input, câmera, estado/salvamento, manobras, regras da simulação, orquestração
+src/physics/             vento, pipa, linha, carretel, corte, perigos, "flyer" (pipa+linha+mão), mundo
+src/ai/                  IA com máquina de estados
+src/scenes/              favela, varzea, centroSP, rio (+ ajudantes de desenho)
+src/render/              renderizador, desenho das pipas, partículas e textos
+src/ui/                  menu, HUD, tutorial
+src/audio/               áudio sintetizado
+scripts/icons.ts         ícones do PWA gerados por código (rasterizador + PNG próprios)
+tests/                   testes Vitest
+```
 
 ## Decisões técnicas (Fase 1)
 
@@ -63,6 +101,14 @@ Modo debug: abra com `?debug=1` (fps, tensão, vento, posição, hitboxes).
 - **Personalização**: 6 modelos (raia, pião, papagaio, estrela, coração e quadrada) e 8 cores para a pipa e para a rabiola, com prévia. Salvo no `localStorage`.
 - **Tutorial** na primeira partida, em 3 passos (puxar, soltar carretel, cortar) com mãozinha animada; pode ser pulado.
 - **Ajustes de física desta fase**: rabiola passou a ter arrasto próprio (freia a pipa em loops), linha um pouco mais elástica (rigidez 70 N/m) para trancos menos secos, e a linha só arrebenta por tensão sustentada (1,5 s no vermelho) ou pico muito alto (1,6× a ruptura nominal por ~60 ms).
+
+## Decisões técnicas (Fase 4 — áudio, PWA, desempenho)
+
+- **Áudio sintetizado** (`src/audio/audio.ts`), criado no primeiro toque: vento (ruído filtrado que acompanha o vento e a velocidade da pipa), zumbido da linha (osciladores cuja altura sobe com a tensão), catraca do carretel (ruído modulado por LFO proporcional à velocidade da linha), bipe agudo de alerta na tensão vermelha, estalo seco de corte, choque elétrico, rasgo, raspão de linhas, jingles de manobra (sobem com o combo), vitória e derrota. Os sons contínuos usam nós persistentes que só têm parâmetros ajustados a cada quadro; os pontuais criam nós curtos só no evento. Botão de silenciar no HUD, na pausa e no menu (salvo).
+- **PWA**: `manifest.webmanifest`, ícones PNG (192, 512, maskable, apple-touch) e SVG **gerados por código no build** por um plugin do Vite (rasterizador de polígonos com supersampling + codificador PNG com o zlib do Node, sem dependências). Service worker simples (rede primeiro para a página, cache para os arquivos com hash) para abrir offline e "adicionar à tela inicial".
+- **Desempenho**: física ~0,5 ms e render ~2 ms por quadro (medido no Chromium com 3 adversários). Resolução adaptativa: se o aparelho ficar abaixo de ~48 fps por 3 s, o `devicePixelRatio` usado cai (2 → 1,6 → 1,3 → 1). Nada de objetos, arrays ou closures criados no loop (o perfil de heap só mostra o empacotamento interno de números do V8, ~45 KB/s, coletado nas GCs menores).
+- **Balanceamento**: duelos contra a IA de ~8 a 25 s; a Fácil perde para quem só segura a pipa, Média e Brava atacam de verdade. Loops contínuos na zona de força levam a tensão ao vermelho — na Simulação isso arrebenta a linha em alguns segundos (no Arcade o carretel alivia sozinho).
+- **Salvamento** só em `localStorage` (`pipabrava.v1`): configurações, pipa, linhas liberadas, tutorial visto e recorde por modo e cenário.
 
 ## Testes
 

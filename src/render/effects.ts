@@ -111,7 +111,7 @@ export class Popups {
     best.kind = kind;
   }
   update(dt: number): void {
-    for (const p of this.items) if (p.life > 0) p.life -= dt;
+    for (let i = 0; i < this.items.length; i++) if (this.items[i].life > 0) this.items[i].life -= dt;
   }
   clear(): void {
     for (const p of this.items) p.life = 0;

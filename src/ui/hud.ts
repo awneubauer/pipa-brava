@@ -56,11 +56,16 @@ export class Hud {
   private lastSpin = 0;
   /** área do botão de pausa (px CSS) */
   readonly pauseBtn = { x: 0, y: 0, w: 44, h: 44 };
+  /** botão de silenciar */
+  readonly muteBtn = { x: 0, y: 0, w: 44, h: 44 };
+  muted = false;
   safeTop = 0;
 
   layout(w: number, reelW: number): void {
     this.pauseBtn.x = w - reelW / 2 - 22;
     this.pauseBtn.y = 10 + this.safeTop;
+    this.muteBtn.x = w - reelW / 2 - 22;
+    this.muteBtn.y = this.pauseBtn.y + 52;
     void reelW;
   }
 
@@ -74,10 +79,10 @@ export class Hud {
     const rx = w - reelW;
     ctx.fillStyle = 'rgba(20,12,40,0.28)';
     ctx.beginPath();
-    ctx.roundRect(rx + 6, top + 56, reelW - 12, h - top - 72, 18);
+    ctx.roundRect(rx + 6, top + 106, reelW - 12, h - top - 122, 18);
     ctx.fill();
     const cx = rx + reelW / 2;
-    const cy = top + 56 + (h - top - 72) / 2;
+    const cy = top + 106 + (h - top - 122) / 2;
     this.reelAngle += (p.reel.spin - this.lastSpin) * 0.9 * Math.sign(p.reel.rate || 1);
     this.lastSpin = p.reel.spin;
     const rr = Math.min(reelW * 0.36, 34);
@@ -110,8 +115,8 @@ export class Hud {
     ctx.textAlign = 'center';
     ctx.font = F800_11;
     ctx.fillStyle = p.reel.rate < -0.5 ? '#ffe680' : 'rgba(255,255,255,0.85)';
-    ctx.fillText('▲', cx, top + 76);
-    ctx.fillText('RECOLHER', cx, top + 92);
+    ctx.fillText('▲', cx, top + 126);
+    ctx.fillText('RECOLHER', cx, top + 142);
     ctx.fillStyle = p.reel.rate > 0.5 ? '#ffe680' : 'rgba(255,255,255,0.85)';
     ctx.fillText('SOLTAR', cx, h - 40);
     ctx.fillText('▼', cx, h - 24);
@@ -263,6 +268,37 @@ export class Hud {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(pb.x + 15, pb.y + 13, 5, 18);
     ctx.fillRect(pb.x + 25, pb.y + 13, 5, 18);
+
+    // silenciar
+    const mb = this.muteBtn;
+    ctx.fillStyle = 'rgba(20,12,40,0.45)';
+    ctx.beginPath();
+    ctx.roundRect(mb.x, mb.y, mb.w, mb.h, 12);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(mb.x + 12, mb.y + 18);
+    ctx.lineTo(mb.x + 17, mb.y + 18);
+    ctx.lineTo(mb.x + 24, mb.y + 12);
+    ctx.lineTo(mb.x + 24, mb.y + 32);
+    ctx.lineTo(mb.x + 17, mb.y + 26);
+    ctx.lineTo(mb.x + 12, mb.y + 26);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (this.muted) {
+      ctx.moveTo(mb.x + 28, mb.y + 17);
+      ctx.lineTo(mb.x + 36, mb.y + 27);
+      ctx.moveTo(mb.x + 36, mb.y + 17);
+      ctx.lineTo(mb.x + 28, mb.y + 27);
+    } else {
+      ctx.arc(mb.x + 25, mb.y + 22, 6, -0.9, 0.9);
+      ctx.moveTo(mb.x + 31.5, mb.y + 13);
+      ctx.arc(mb.x + 25, mb.y + 22, 11, -0.9, 0.9);
+    }
+    ctx.stroke();
 
     if (info.debug) {
       ctx.textAlign = 'left';

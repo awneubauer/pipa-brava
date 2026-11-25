@@ -181,7 +181,8 @@ export class Input {
     this.sky.active = false;
     this.reelTouch.active = false;
     if (this.enabled) {
-      for (const t of this.tracks) {
+      for (let ti = 0; ti < this.tracks.length; ti++) {
+        const t = this.tracks[ti];
         if (t.id === -1) continue;
         if (t.zone === 'sky') {
           const dx = t.x - t.sx;
