@@ -133,7 +133,11 @@ export class BattleRules {
   private markerDir = 1;
   private markerSpeed = 1;
   private tapCooldown = 0;
-  private duelCross: Crossing | null = null;
+  /** dano desta briga (sua linha / a dele) e onde as linhas engancharam */
+  dMe = 0;
+  dEnemy = 0;
+  private duelX = 0;
+  private duelY = 0;
   /** onde as pipas ficam presas durante o duelo */
   holdX = 0;
   holdY = 0;
@@ -224,7 +228,7 @@ export class BattleRules {
     const agile = Math.min(1, 0.7 + 0.03 * this.stats.wave + (boss ? 0.15 : 0));
     const ai = new KiteAI(f, waveDifficulty(this.stats.wave + (boss ? 1 : 0)), 500 + this.spawnCount * 31, w.scene.hazards, agile);
     // tempo rondando antes de atacar: encurta nas fases avançadas
-    ai.patrolTime = Math.max(1.2, 4.2 - 0.25 * (this.stats.wave - 1)) + this.rng() * 1.5;
+    ai.patrolTime = Math.max(2, 5.5 - 0.25 * (this.stats.wave - 1)) + this.rng() * 1.5;
     this.ais[slot] = ai;
     this.wasInDuel[slot] = 0;
     this.cb.onSpawn(f.name);
@@ -266,25 +270,18 @@ export class BattleRules {
   private stepDuel(dt: number): void {
     const cs = this.cuts.crossings;
     const p = this.player;
-    let found: Crossing | null = null;
-    if (this.duel) {
-      // duelo travado: só a pipa enganchada conta, até alguém ser cortado
-      // (ou as linhas ficarem soltas por mais de 0,7 s)
-      for (let i = 0; i < cs.length; i++) {
-        const c = cs[i];
-        if (c.active && c.a === 0 && c.b === this.duelEnemy && c.idle < 1.0) found = c;
-      }
-      const e = this.w.flyers[this.duelEnemy];
-      if (!e || e.hidden || !isAlive(e)) found = null;
-    } else {
+    if (this.tapCooldown > 0) this.tapCooldown -= dt;
+    if (this.feedbackT > 0) this.feedbackT -= dt;
+    for (let i = 0; i < this.reengage.length; i++) if (this.reengage[i] > 0) this.reengage[i] -= dt;
+    if (!this.duel) {
       // começa com quem está atacando (se houver), senão com qualquer cruzamento novo
+      let found: Crossing | null = null;
       let bestScore = -1;
       for (let i = 0; i < cs.length; i++) {
         const c = cs[i];
         if (!c.active || c.a !== 0 || c.idle > 0.05) continue;
         const e = this.w.flyers[c.b];
         if (!e || e.hidden || !isAlive(e)) continue;
-        // a mesma pipa só engancha de novo depois de um respiro (evita liga-desliga)
         if (this.reengage[c.b - 1] > 0) continue;
         const ai = this.ais[c.b - 1];
         // só engancha se alguém está atacando: o inimigo vindo, ou você numa embicada/arrancada
@@ -298,50 +295,17 @@ export class BattleRules {
           found = c;
         }
       }
+      if (!found || !isAlive(p)) return;
+      this.beginDuel(found);
     }
-    if (this.tapCooldown > 0) this.tapCooldown -= dt;
-    if (this.feedbackT > 0) this.feedbackT -= dt;
-    for (let i = 0; i < this.reengage.length; i++) if (this.reengage[i] > 0) this.reengage[i] -= dt;
-    if (!found) {
-      if (this.duel) this.endDuel();
+    // duelo travado até alguém ser cortado: as pipas ficam presas, ninguém foge
+    const e = this.w.flyers[this.duelEnemy];
+    if (!e || e.hidden || !isAlive(e) || !isAlive(p)) {
+      this.endDuel();
       return;
     }
-    const c = found;
-    const e = this.w.flyers[c.b];
-    const slot = c.b - 1;
+    const slot = this.duelEnemy - 1;
     const boss = e.visualScale > 1;
-    if (!this.duel) {
-      // começa o duelo. Quem atravessou a linha (veio mais rápido) leva vantagem;
-      // por cima e de surpresa a zona fica maior
-      const ai = this.ais[slot];
-      this.surprise = !!ai && ai.state === 'patrulhar';
-      this.above = p.kite.y > e.kite.y + 1;
-      const pv = Math.hypot(p.kite.vx, p.kite.vy);
-      const ev = Math.hypot(e.kite.vx, e.kite.vy);
-      this.initiative = this.surprise || this.boost > 0 || pv > ev * 1.1 ? 'voce' : 'ele';
-      if (this.initiative === 'voce') c.dmgB += 0.15 / e.lineType.resistance;
-      else this.hurt(c, 0.08 + 0.02 * this.stats.wave * PLAYER_GUARD);
-      this.duel = true;
-      this.duelEnemy = c.b;
-      this.duelTime = 0;
-      this.holdX = p.kite.x;
-      this.holdY = p.kite.y;
-      // o tranco do engate: as duas pipas param ali (as linhas não se soltam no embalo)
-      p.kite.vx = p.kite.vy = p.kite.vz = 0;
-      e.kite.vx = e.kite.vy = e.kite.vz = 0;
-      this.enemyHoldX[slot] = e.kite.x;
-      this.enemyHoldY[slot] = e.kite.y;
-      this.wasInDuel[slot] = 1;
-      this.marker = 0;
-      this.markerDir = 1;
-      this.markerSpeed = Math.min(2.4, 0.55 + 0.1 * (this.stats.wave - 1) + (boss ? 0.25 : 0));
-      const cerol = this.opts.cerol ?? 1;
-      this.zoneHW = Math.min(
-        0.22,
-        0.095 * (1 + 0.15 * (cerol - 1)) * (this.above ? 1.3 : 1) * (this.surprise ? 1.15 : 1) * (this.initiative === 'voce' ? 1.2 : 0.85),
-      );
-      this.newZone();
-    }
     this.duelTime += dt;
     // marcador vai e volta
     this.marker += this.markerDir * this.markerSpeed * 2 * dt;
@@ -354,30 +318,86 @@ export class BattleRules {
     }
     // pressão: quem enrola perde linha aos poucos
     const E = enemySaw(this.stats.wave, boss);
-    this.hurt(c, (0.04 + 0.1 * E * e.lineType.sharpness) * PLAYER_GUARD * 2 * dt);
+    this.hurt((0.04 + 0.1 * E * e.lineType.sharpness) * PLAYER_GUARD * 2 * dt);
     // engancha as duas pipas
     const ai = this.ais[slot];
     if (ai) ai.hold = true;
     e.ctrl.assist = 1;
     e.ctrl.assistX = this.enemyHoldX[slot];
     e.ctrl.assistY = this.enemyHoldY[slot];
+    e.damage = this.dEnemy;
+    p.damage = this.dMe;
     this.sparkT -= dt * 6;
     if (this.sparkT <= 0) {
       this.sparkT = 1;
-      this.w.events.push('spark', 0, c.x, c.y, 0.4, c.b);
+      this.w.events.push('spark', 0, this.duelX, this.duelY, 0.4, this.duelEnemy);
     }
-    this.duelCross = c;
+    this.resolveDuel();
+  }
+
+  private beginDuel(c: Crossing): void {
+    const p = this.player;
+    const e = this.w.flyers[c.b];
+    const slot = c.b - 1;
+    const boss = e.visualScale > 1;
+    const ai = this.ais[slot];
+    // quem atravessou a linha (veio mais rápido) leva vantagem; por cima e de surpresa a zona fica maior
+    this.surprise = !!ai && ai.state === 'patrulhar';
+    this.above = p.kite.y > e.kite.y + 1;
+    const pv = Math.hypot(p.kite.vx, p.kite.vy);
+    const ev = Math.hypot(e.kite.vx, e.kite.vy);
+    this.initiative = this.surprise || this.boost > 0 || pv > ev * 1.1 ? 'voce' : 'ele';
+    this.duel = true;
+    this.duelEnemy = c.b;
+    this.duelTime = 0;
+    this.duelX = c.x;
+    this.duelY = c.y;
+    this.dMe = 0;
+    this.dEnemy = 0;
+    if (this.initiative === 'voce') this.dEnemy += 0.15 / e.lineType.resistance;
+    else this.hurt(0.08 + 0.02 * this.stats.wave * PLAYER_GUARD);
+    this.holdX = p.kite.x;
+    this.holdY = p.kite.y;
+    // o tranco do engate: as duas pipas param ali (as linhas não se soltam no embalo)
+    p.kite.vx = p.kite.vy = p.kite.vz = 0;
+    e.kite.vx = e.kite.vy = e.kite.vz = 0;
+    this.enemyHoldX[slot] = e.kite.x;
+    this.enemyHoldY[slot] = e.kite.y;
+    this.wasInDuel[slot] = 1;
+    this.marker = 0;
+    this.markerDir = 1;
+    this.markerSpeed = Math.min(2.4, 0.55 + 0.1 * (this.stats.wave - 1) + (boss ? 0.25 : 0));
+    const cerol = this.opts.cerol ?? 1;
+    this.zoneHW = Math.min(
+      0.22,
+      0.095 * (1 + 0.15 * (cerol - 1)) * (this.above ? 1.3 : 1) * (this.surprise ? 1.15 : 1) * (this.initiative === 'voce' ? 1.2 : 0.85),
+    );
+    this.newZone();
+  }
+
+  /** Alguém chegou a 100% no duelo: a linha arrebenta ali. */
+  private resolveDuel(): void {
+    const p = this.player;
+    const e = this.w.flyers[this.duelEnemy];
+    if (!e) return;
+    if (this.dEnemy >= 1) {
+      severLine(e, Math.floor(e.line.n * 0.55), 'cut');
+      this.cuts.cutsBy[0] = (this.cuts.cutsBy[0] ?? 0) + 1;
+      this.w.events.push('cut', e.index, this.duelX, this.duelY, 1, 0);
+      this.endDuel();
+    } else if (this.dMe >= 1 || this.hp <= 0) {
+      this.hp = Math.min(this.hp, 0);
+      severLine(p, Math.floor(p.line.n * 0.55), 'cut');
+      this.w.events.push('cut', 0, this.duelX, this.duelY, 1, e.index);
+      this.endDuel();
+    }
   }
 
   /** Dano na sua linha: conta no duelo atual e na VIDA da partida (que não volta sozinha). */
-  private hurt(c: Crossing, amount: number): void {
-    c.dmgA += amount;
+  private hurt(amount: number): void {
+    this.dMe += amount;
     this.hp -= amount * HP_PER_DAMAGE;
-    if (this.hp <= 0) {
-      this.hp = 0;
-      // a vida acabou: a linha arrebenta ali mesmo, mesmo com o duelo não terminado
-      c.dmgA = Math.max(c.dmgA, 1.01);
-    }
+    if (this.hp < 0) this.hp = 0;
   }
 
   /** Passarinho de vida: atravessa o céu de vez em quando; encostar nele devolve vida. */
@@ -428,31 +448,30 @@ export class BattleRules {
     }
     this.duel = false;
     this.duelEnemy = -1;
-    this.duelCross = null;
   }
 
   /** Botão PUXA! no duelo. Retorna 'perfeito', 'corte', 'erro' ou null (fora do duelo / recarga). */
   duelTap(): 'perfeito' | 'corte' | 'erro' | null {
-    const c = this.duelCross;
-    if (!this.duel || !c || this.tapCooldown > 0) return null;
+    if (!this.duel || this.tapCooldown > 0) return null;
+    const e = this.w.flyers[this.duelEnemy];
+    if (!e) return null;
     this.tapCooldown = 0.25;
-    const e = this.w.flyers[c.b];
     const d = Math.abs(this.marker - this.zoneC);
     const cerol = this.opts.cerol ?? 1;
     let r: 'perfeito' | 'corte' | 'erro';
     if (d <= this.zoneHW) {
       const perfect = d <= this.zoneHW * 0.4;
-      const dmg = ((0.3 + 0.07 * (cerol - 1)) * (perfect ? 1.7 : 1)) / e.lineType.resistance;
-      c.dmgB += dmg;
+      this.dEnemy += ((0.3 + 0.07 * (cerol - 1)) * (perfect ? 1.7 : 1)) / e.lineType.resistance;
       r = perfect ? 'perfeito' : 'corte';
       this.newZone();
     } else {
       const E = enemySaw(this.stats.wave, e.visualScale > 1);
-      this.hurt(c, 0.14 * E * e.lineType.sharpness * PLAYER_GUARD * 2);
+      this.hurt(0.14 * E * e.lineType.sharpness * PLAYER_GUARD * 2);
       r = 'erro';
     }
     this.feedback = r;
     this.feedbackT = 0.6;
+    this.resolveDuel();
     return r;
   }
 

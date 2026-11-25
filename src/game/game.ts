@@ -102,14 +102,12 @@ export class Game {
         dy = c.joyY / m;
       }
       startManeuver(st, 'embicada', p.kite.x + dx * EMBICADA_DIST, p.kite.y + dy * EMBICADA_DIST);
-      this.popups.show('EMBICADA!', '', p.kite.x, p.kite.y + 3, false, 0.7, '#ff8a6b', 24, 'pop');
       this.fx.burst(PKind.Spark, p.kite.x, p.kite.y, 14, 8, 0.4, 1);
       this.audio.snapBreak();
       this.vibrate([20, 20, 30]);
       if (this.battle) this.battle.jerk();
     } else if (single) {
       startManeuver(st, 'puxada', 0, 0);
-      this.popups.show('PUXADA!', '', p.kite.x, p.kite.y + 3, false, 0.6, '#ffe680', 20, 'pop');
       this.fx.burst(PKind.Spark, p.kite.x, p.kite.y, 8, 5, 0.3, 0);
       this.audio.bump();
       this.vibrate(15);
@@ -126,7 +124,6 @@ export class Game {
           ax = p.kite.x >= e.kite.x ? 1 : -1;
         }
       }
-      if (st.move !== 'linha') this.popups.show('DANDO LINHA', '', p.kite.x, p.kite.y + 3, false, 0.6, '#9ff3ff', 18, 'pop');
       startManeuver(st, 'linha', ax * 0.8, -0.6);
     }
   }
@@ -139,14 +136,13 @@ export class Game {
       this.vibrate([50, 30, 50]);
       this.camera.shake(5);
       this.audio.snapBreak();
-      this.popups.show('ERROU!', '', p.kite.x, p.kite.y + 3, false, 0.7, '#ff6b6b', 26, 'pop');
     } else {
       const perfect = r === 'perfeito';
       this.vibrate(perfect ? [20, 20, 40] : 25);
       this.camera.shake(perfect ? 7 : 4);
       this.audio.scrape(1);
       this.audio.maneuver(perfect ? 4 : 1);
-      this.popups.show(perfect ? 'PERFEITO!' : 'CORTE!', '', p.kite.x, p.kite.y + 3, false, 0.8, perfect ? '#7dff5a' : '#ffd400', perfect ? 30 : 26, 'pop');
+      this.fx.burst(PKind.Spark, p.kite.x, p.kite.y, perfect ? 22 : 10, perfect ? 10 : 6, 0.4, perfect ? 0 : 1);
     }
   }
   private battleOutcome: 'playing' | 'win' | 'lose' = 'playing';
@@ -288,8 +284,8 @@ export class Game {
         w,
         mult,
         {
-          onCut: (pts, combo, coins, x, y) => {
-            this.popups.show(combo > 1 ? 'COMBO x' + combo + '!' : 'CORTOU!', '+' + pts + '   +' + coins + ' 🪙', this.w * 0.42, this.h * 0.3, true, 1.8, combo > 1 ? '#ff6bd6' : '#ffd400', combo > 1 ? 44 : 46, 'banner');
+          onCut: (_pts, combo, coins, x, y) => {
+            this.popups.show(combo > 1 ? 'COMBO x' + combo + '!' : 'CORTOU!', '+' + coins + ' 🪙', this.w * 0.42, this.h * 0.36, true, 1.1, combo > 1 ? '#ff6bd6' : '#ffd400', 32, 'banner');
             this.fx.burst(PKind.Confetti, x, y, 30, 8, 1.5, Math.floor(Math.random() * 8));
             this.audio.maneuver(combo);
           },
@@ -553,11 +549,6 @@ export class Game {
       if (this.bannerCd > 0) this.bannerCd -= PHYSICS.dt;
       if (this.battle.duel && !wasDuel && this.bannerCd <= 0) {
         this.bannerCd = 3;
-        const b = this.battle;
-        const mine = b.initiative === 'voce';
-        const bonus = b.above && b.surprise ? 'Por cima e de surpresa!' : b.above ? 'Por cima: zona maior!' : b.surprise ? 'De surpresa: zona maior!' : '';
-        const sub = mine ? bonus || 'Vantagem sua: já tirou um pedaço!' : 'Reaja: aperte CORTA! no verde';
-        this.popups.show(mine ? 'VOCÊ ATRAVESSOU!' : 'TE PEGARAM!', sub, this.w * 0.42, this.h * 0.3, true, 1.3, mine ? '#7dff5a' : '#ff8a6b', 28, 'banner');
         this.vibrate([30, 30, 30]);
         this.camera.shake(5);
       }
@@ -712,6 +703,16 @@ export class Game {
     const cam = this.camera;
     const p = w.flyers[0];
     cam.beginFrame();
+    const b = this.battle;
+    if (b && b.duel && b.duelEnemy > 0) {
+      // duelo: a câmera fecha só nas duas pipas enganchadas
+      const e = w.flyers[b.duelEnemy];
+      cam.include(p.kite.x, p.kite.y, 9);
+      cam.include(e.kite.x, e.kite.y, 9);
+      cam.solve(w.scene.ground(p.baseX), false);
+      if (snap) cam.snap();
+      return;
+    }
     cam.include(p.baseX, p.baseY, 6);
     cam.include(p.kite.x, p.kite.y, 7);
     for (let i = 1; i < w.flyers.length; i++) {

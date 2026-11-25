@@ -71,6 +71,20 @@ export function goalText(l: LevelDef): string {
   }
 }
 
+/** Objetivo em poucas palavras (para o HUD). */
+export function goalHud(l: LevelDef): string {
+  switch (l.goal) {
+    case 'cut':
+      return 'Corte ' + l.target;
+    case 'survive':
+      return 'Sobreviva ' + l.target + ' s';
+    case 'combo':
+      return 'Combo x' + l.target;
+    case 'boss':
+      return 'Derrube o Rei';
+  }
+}
+
 export function goalShort(l: LevelDef): string {
   switch (l.goal) {
     case 'cut':

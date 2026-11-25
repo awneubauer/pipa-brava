@@ -94,11 +94,11 @@ describe('Batalha no Céu (fases)', () => {
     expect(r.b.stats.time).toBeLessThan(60);
   });
 
-  it('com várias pipas no céu, o duelo não fica reiniciando (fases 3 a 7)', () => {
+  it('com várias pipas no céu, o duelo não reinicia e sempre termina num corte (fases 3 a 7)', () => {
     for (const n of [3, 5, 6, 7]) {
       const r = playLevel(n, 5 + n, 1800, 60);
-      // cada duelo começa uma vez e quase sempre termina num corte (raramente as linhas se soltam)
-      expect(r.starts).toBeLessThanOrEqual(Math.ceil(r.b.stats.cuts * 1.5) + 2);
+      // todo duelo vai até o fim: termina num corte (seu ou dele), ninguém foge
+      expect(r.starts).toBeLessThanOrEqual(r.b.stats.cuts + 1);
     }
   });
 
@@ -220,7 +220,7 @@ describe('Batalha no Céu (fases)', () => {
     b.hp = 0.001;
     (b as unknown as { duel: boolean }).duel = true;
     (b as unknown as { tapCooldown: number }).tapCooldown = 0;
-    (b as unknown as { duelCross: unknown }).duelCross = { b: 1, dmgA: 0, dmgB: 0 };
+    b.duelEnemy = 1;
     b.marker = 0;
     b.zoneC = 0.5;
     b.zoneHW = 0.05;
@@ -241,7 +241,7 @@ describe('Batalha no Céu (fases)', () => {
     (b as unknown as { duel: boolean }).duel = true;
     for (let i = 0; i < 40; i++) {
       (b as unknown as { tapCooldown: number }).tapCooldown = 0;
-      (b as unknown as { duelCross: unknown }).duelCross = { b: 1, dmgA: 0, dmgB: 0 };
+      b.duelEnemy = 1;
       b.marker = (i * 0.137) % 1;
       b.zoneC = 0.5;
       b.zoneHW = 0.08;

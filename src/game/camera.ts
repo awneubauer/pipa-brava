@@ -44,9 +44,9 @@ export class Camera {
   }
 
   /** calcula o alvo a partir dos pontos incluídos; `floor` = chão que deve aparecer embaixo */
-  solve(floor: number): void {
+  solve(floor: number, includeFloor = true): void {
     if (this.minX === Infinity) return;
-    const minY = Math.min(this.minY, floor);
+    const minY = includeFloor ? Math.min(this.minY, floor) : this.minY;
     const bw = Math.max(8, this.maxX - this.minX);
     const bh = Math.max(10, this.maxY - minY);
     const usableW = this.w * (1 - CAMERA.margin * 2);

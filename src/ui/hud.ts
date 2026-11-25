@@ -3,7 +3,7 @@ import type { ModeId } from '../config';
 import type { BattleRules } from '../game/battle';
 import type { Camera } from '../game/camera';
 import type { Input } from '../game/input';
-import { goalText, type LevelDef } from '../game/levels';
+import { goalHud, type LevelDef } from '../game/levels';
 import type { Flyer } from '../physics/flyer';
 
 /** Cache de texto: só recria a string quando o número muda (evita alocação por quadro). */
@@ -358,7 +358,7 @@ export class Hud {
       ctx.beginPath();
       ctx.arc(s.x, s.y, 24, 0, Math.PI * 2);
       ctx.fill();
-    } else if (info.battle && info.battle.stats.time < 8) {
+    } else if (info.battle && info.battle.stats.time < 5) {
       // mostra onde fica o joystick no começo
       const x = 90;
       const y = info.cam.h - 120;
@@ -444,7 +444,7 @@ export class Hud {
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
       ctx.fillText(this.tLine.get(info.player.reel.out), rb.x, rb.y - rb.r - 9);
     }
-    if (!duel && info.battle.stats.time < 20) {
+    if (!duel && info.battle.stats.time < 6) {
       // cola dos comandos acima do botão
       ctx.font = F800_10;
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
@@ -478,9 +478,6 @@ export class Hud {
       const life = Math.max(0, 1 - f.damage);
       ctx.fillStyle = life > 0.6 ? '#ff4d6d' : life > 0.3 ? '#ff8a00' : '#ffd400';
       ctx.fillRect(x - bw / 2, y, bw * life, 4);
-      ctx.font = F800_10;
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(f.name, x, y - 7);
     }
     // painel
     ctx.fillStyle = 'rgba(20,12,40,0.5)';
@@ -492,7 +489,7 @@ export class Hud {
     if (lv) {
       if (this.goalLevel !== lv) {
         this.goalLevel = lv;
-        this.goalStr = 'FASE ' + lv.n + ' · ' + goalText(lv);
+        this.goalStr = 'FASE ' + lv.n + ' · ' + goalHud(lv);
       }
       ctx.font = F800_12;
       ctx.fillStyle = '#ffe680';
@@ -615,21 +612,6 @@ export class Hud {
       ctx.fillText('⚠', x, y);
     }
     this.duelT += 0.004;
-    // dica nos primeiros segundos
-    if (st.time < 6 && info.easy && !b.duel) {
-      ctx.globalAlpha = Math.min(1, (6 - st.time) / 1.5);
-      ctx.fillStyle = 'rgba(20,12,40,0.6)';
-      const hw = Math.min(w - 24, 330);
-      ctx.beginPath();
-      ctx.roundRect((w - hw) / 2, info.cam.h - 96 - 230, hw, 50, 14);
-      ctx.fill();
-      ctx.font = F800_12;
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText('Polegar esquerdo pilota a pipa', w / 2, info.cam.h - 310);
-      ctx.fillStyle = '#ffe680';
-      ctx.fillText('Mire e dê 2 toques no PUXA! = embicada', w / 2, info.cam.h - 291);
-      ctx.globalAlpha = 1;
-    }
   }
 
   /** Painel do duelo: barra de timing, vida das duas linhas e bônus. */
@@ -640,64 +622,40 @@ export class Hud {
     const y0 = top + 84;
     const pw = panelW;
     this.duelT += 0.016;
-    ctx.fillStyle = 'rgba(20,12,40,0.78)';
+    ctx.fillStyle = 'rgba(20,12,40,0.7)';
     ctx.beginPath();
-    ctx.roundRect(x0, y0, pw, 96, 16);
+    ctx.roundRect(x0, y0, pw, 58, 14);
     ctx.fill();
-    // vida das linhas
-    const myLife = Math.max(0, 1 - p.damage);
-    const theirLife = e ? Math.max(0, 1 - e.damage) : 1;
-    const bw = pw / 2 - 20;
-    ctx.font = F800_10;
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('ESTA BRIGA', x0 + 12, y0 + 12);
-    ctx.textAlign = 'right';
-    ctx.fillText(e ? e.name.toUpperCase() : '', x0 + pw - 12, y0 + 12);
+    // linha de cada um nesta briga (sua à esquerda, dele à direita)
+    const myLife = Math.max(0, 1 - b.dMe);
+    const theirLife = e ? Math.max(0, 1 - b.dEnemy) : 1;
+    const bw = pw / 2 - 18;
     ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    ctx.fillRect(x0 + 12, y0 + 20, bw, 9);
-    ctx.fillRect(x0 + pw - 12 - bw, y0 + 20, bw, 9);
+    ctx.fillRect(x0 + 10, y0 + 8, bw, 7);
+    ctx.fillRect(x0 + pw - 10 - bw, y0 + 8, bw, 7);
     ctx.fillStyle = myLife > 0.4 ? '#2ed573' : '#ff3b3b';
-    ctx.fillRect(x0 + 12, y0 + 20, bw * myLife, 9);
+    ctx.fillRect(x0 + 10, y0 + 8, bw * myLife, 7);
     ctx.fillStyle = '#ff4d6d';
-    ctx.fillRect(x0 + pw - 12 - bw * theirLife, y0 + 20, bw * theirLife, 9);
-    // barra de timing
-    const tx = x0 + 14;
-    const tw = pw - 28;
-    const ty = y0 + 40;
-    const th = 26;
+    ctx.fillRect(x0 + pw - 10 - bw * theirLife, y0 + 8, bw * theirLife, 7);
+    // barra de timing (zona verde no centro)
+    const tx = x0 + 12;
+    const tw = pw - 24;
+    const ty = y0 + 24;
+    const th = 24;
     ctx.fillStyle = 'rgba(255,255,255,0.12)';
     ctx.beginPath();
     ctx.roundRect(tx, ty, tw, th, 8);
     ctx.fill();
-    const zx = tx + (b.zoneC - b.zoneHW) * tw;
-    ctx.fillStyle = '#2ed573';
-    ctx.fillRect(zx, ty, b.zoneHW * 2 * tw, th);
-    ctx.fillStyle = '#9dff8a';
+    // a zona pisca quando acerta/erra
+    const fb = b.feedbackT > 0 ? b.feedback : '';
+    ctx.fillStyle = fb === 'erro' ? '#ff3b3b' : '#2ed573';
+    ctx.fillRect(tx + (b.zoneC - b.zoneHW) * tw, ty, b.zoneHW * 2 * tw, th);
+    ctx.fillStyle = fb === 'erro' ? '#ff8a8a' : fb === 'perfeito' ? '#ffffff' : '#9dff8a';
     ctx.fillRect(tx + (b.zoneC - b.zoneHW * 0.4) * tw, ty, b.zoneHW * 0.8 * tw, th);
     const mx = tx + b.marker * tw;
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(mx - 3, ty - 5, 6, th + 10);
-    ctx.beginPath();
-    ctx.moveTo(mx - 8, ty - 8);
-    ctx.lineTo(mx + 8, ty - 8);
-    ctx.lineTo(mx, ty);
-    ctx.closePath();
-    ctx.fill();
-    // retorno do último toque / instrução
-    ctx.textAlign = 'center';
-    ctx.font = F800_12;
-    if (b.feedbackT > 0) {
-      ctx.fillStyle = b.feedback === 'erro' ? '#ff6b6b' : b.feedback === 'perfeito' ? '#7dff5a' : '#ffd400';
-      ctx.fillText(b.feedback === 'erro' ? 'ERROU! Espere a zona verde' : b.feedback === 'perfeito' ? 'PERFEITO!' : 'CORTE!', x0 + pw / 2, y0 + 84);
-    } else {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(
-        b.initiative === 'voce' ? (b.above ? 'VANTAGEM + POR CIMA · CORTA! no verde' : 'VANTAGEM SUA · CORTA! no verde') : 'ELE ATACOU · CORTA! no verde',
-        x0 + pw / 2,
-        y0 + 84,
-      );
-    }
+    ctx.fillRect(mx - 3, ty - 4, 6, th + 8);
+    void p;
     void w;
   }
 
