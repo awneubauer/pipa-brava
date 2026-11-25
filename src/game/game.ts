@@ -56,7 +56,7 @@ export interface BattleResult {
 const DPR_LEVELS = [2, 1.6, 1.3, 1];
 
 /** alcance da embicada (m) */
-const EMBICADA_DIST = 22;
+const EMBICADA_DIST = 12;
 
 export interface GameHooks {
   onPause: () => void;

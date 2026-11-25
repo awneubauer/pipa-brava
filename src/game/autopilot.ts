@@ -36,7 +36,7 @@ export function createEasyState(): EasyState {
  */
 export function startManeuver(st: EasyState, m: Maneuver, mx: number, my: number): void {
   st.move = m;
-  st.moveT = m === 'puxada' ? 0.3 : m === 'embicada' ? 0.6 : 0.12;
+  st.moveT = m === 'puxada' ? 0.3 : m === 'embicada' ? 0.5 : 0.12;
   st.mx = mx;
   st.my = my;
 }
@@ -58,6 +58,7 @@ export function easyControl(
   const L = f.reel.out;
   c.assistBoost = 1;
   let forceReel: number | null = null;
+  let recolhendo = false;
   if (st.moveT > 0) {
     st.moveT -= dt;
     active = true;
@@ -71,7 +72,7 @@ export function easyControl(
     } else if (st.move === 'embicada') {
       tx = st.mx;
       ty = st.my;
-      c.assistBoost = 1.9;
+      c.assistBoost = 1.35;
       // solta linha à vontade para alcançar o bote
       const need = Math.hypot(tx - f.handX, ty - f.handY) * 1.15 + 3;
       if (need > L) forceReel = 1;
@@ -87,8 +88,13 @@ export function easyControl(
       const d = Math.hypot(dx, dy) || 1;
       tx = k.x + (dx / d) * 10;
       ty = k.y + (dy / d) * 10;
-      c.assistBoost = 1.1;
+      // o carretel puxa e a linha traz a pipa (esticada, sem barriga embolando);
+      // a mão só ajuda de leve na direção certa
+      // vento quase não pesa (boost > 1), mas a pipa vem no máximo ~19 m/s:
+      // o carretel acompanha e a linha não sobra
+      c.assistBoost = 1.05;
       forceReel = L > 14 ? -1 : 0;
+      recolhendo = true;
     }
     if (st.moveT <= 0) st.move = 'none';
   }
@@ -123,7 +129,7 @@ export function easyControl(
   if (d < L - 2 && st.boost <= 0) reel = Math.min(reel, -clamp((L - d) / 10, 0.15, 0.6));
   if (f.tension01 > TENSION.yellow + 0.06) reel = Math.max(reel, 0.3);
   if (forceReel !== null) reel = forceReel;
-  c.assist = active ? 1 : 0;
+  c.assist = active ? (recolhendo ? 0.4 : 1) : 0;
   c.assistX = tx;
   c.assistY = ty < f.baseY + 9 ? f.baseY + 9 : ty;
   c.steer = active ? steer * 0.3 : 0;

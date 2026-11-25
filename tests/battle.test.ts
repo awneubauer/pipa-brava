@@ -171,11 +171,16 @@ describe('Batalha no Céu (fases)', () => {
     const es = createEasyState();
     run(f, env, 3);
     const d0 = Math.hypot(f.kite.x - f.handX, f.kite.y - f.handY);
+    let maxSlack = 0;
     for (let i = 0; i < 3 * 60; i++) {
       startManeuver(es, 'recolhe', 0, 0);
       easyControl(f, false, 0, 0, false, es, 1 / 60);
       run(f, env, 1 / 60);
+      const d = Math.hypot(f.kite.x - f.handX, f.kite.y - f.handY, f.kite.z - f.handZ);
+      maxSlack = Math.max(maxSlack, f.reel.out - d);
     }
+    // a linha volta esticada: sem sobra que embole
+    expect(maxSlack).toBeLessThan(2);
     expect(f.reel.out).toBeLessThan(30);
     expect(Math.hypot(f.kite.x - f.handX, f.kite.y - f.handY)).toBeLessThan(d0 * 0.6);
   });
