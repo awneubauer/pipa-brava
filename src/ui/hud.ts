@@ -391,7 +391,16 @@ export class Hud {
     ctx.fillStyle = duel ? '#3a1a10' : '#ffffff';
     ctx.font = F900_15;
     ctx.textAlign = 'center';
-    ctx.fillText(duel ? 'CORTA!' : 'PUXA!', a.x, a.y + 1);
+    ctx.fillText(duel ? 'CORTA!' : input.state.hold ? 'LINHA!' : 'PUXA!', a.x, a.y + 1);
+    if (!duel && info.battle.stats.time < 20) {
+      // cola dos comandos acima do botão
+      ctx.font = F800_10;
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.textAlign = 'right';
+      ctx.fillText('1x  puxada (dispara)', a.x + a.r, a.y - a.r - 44);
+      ctx.fillText('2x  EMBICADA (ataque)', a.x + a.r, a.y - a.r - 30);
+      ctx.fillText('segure  dar linha (foge)', a.x + a.r, a.y - a.r - 16);
+    }
   }
 
   /** HUD da Batalha: objetivo, tempo, vida da linha, combo e barras dos inimigos. */
@@ -499,11 +508,6 @@ export class Hud {
       ctx.fillStyle = 'rgba(255,107,214,0.8)';
       ctx.fillRect(cx - 30, top + 122, 60 * Math.min(1, b.comboTimer / 6), 4);
     }
-    if (b.boost > 0) {
-      ctx.font = F900_15;
-      ctx.fillStyle = '#ffd400';
-      ctx.fillText('PUXÃO!', info.cam.toScreenX(p.kite.x), info.cam.toScreenY(p.kite.y) + 34);
-    }
     // duelo de serra
     if (b.duel) this.drawDuel(ctx, w, info, b, top, panelW);
     // aviso de ataque sobre quem está vindo
@@ -531,9 +535,9 @@ export class Hud {
       ctx.fill();
       ctx.font = F800_12;
       ctx.fillStyle = '#ffffff';
-      ctx.fillText('Polegar esquerdo: pilota · PUXA!: arrancada', w / 2, info.cam.h - 220);
+      ctx.fillText('Polegar esquerdo pilota a pipa', w / 2, info.cam.h - 220);
       ctx.fillStyle = '#ffe680';
-      ctx.fillText('Cruze a linha deles (de cima é melhor!)', w / 2, info.cam.h - 201);
+      ctx.fillText('2 toques no PUXA! = embicada no inimigo', w / 2, info.cam.h - 201);
       ctx.globalAlpha = 1;
     }
   }

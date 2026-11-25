@@ -26,6 +26,8 @@ export interface FlyerControl {
   assist: number;
   assistX: number;
   assistY: number;
+  /** multiplica a velocidade guiada (arrancadas: puxada, embicada) */
+  assistBoost: number;
 }
 
 export type WorldEventType =
@@ -138,7 +140,7 @@ export function createFlyer(
     handVX: 0,
     handVY: 0,
     handVZ: 0,
-    ctrl: { steer: 0, handX: 0, handY: 0, reel: 0, jerk: false, assist: 0, assistX: 0, assistY: 0 },
+    ctrl: { steer: 0, handX: 0, handY: 0, reel: 0, jerk: false, assist: 0, assistX: 0, assistY: 0, assistBoost: 1 },
     steer: 0,
     jerkTimer: 0,
     tension: 0,
@@ -275,9 +277,12 @@ export function stepFlyer(f: Flyer, env: FlyerEnv, dt: number): void {
     // a aceleração total é aplicada de forma semi-implícita (o equilíbrio não muda)
     const kd = (PHYSICS.airDensity * (p.area * (p.cl + p.cd90) + p.tailCdA) * aero.airspeed) / p.mass;
     const imp = 1 / (1 + kd * dt * 0.5);
-    let fx = aero.fx;
-    let fy = aero.fy - p.mass * PHYSICS.gravity;
-    let fz = aero.fz;
+    // pilotagem guiada (modo fácil): a mão do jogador domina, o vento pesa menos
+    // (nas arrancadas — puxada/embicada — quase só a mão conta)
+    const aeroW = f.ctrl.assist > 0 ? (f.ctrl.assistBoost > 1 ? 0.06 : 1 - 0.65 * Math.min(1, f.ctrl.assist)) : 1;
+    let fx = aero.fx * aeroW;
+    let fy = aero.fy * aeroW - p.mass * PHYSICS.gravity * (f.ctrl.assist > 0 ? 0.5 : 1);
+    let fz = aero.fz * aeroW;
     let torque = aero.torque;
 
     // ---------- tração da linha (elástica no trecho da mão) ----------
@@ -353,7 +358,8 @@ export function stepFlyer(f: Flyer, env: FlyerEnv, dt: number): void {
         const dx = f.ctrl.assistX - k.x;
         const dy = f.ctrl.assistY - k.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1e-6;
-        const sp = Math.min(ASSIST.maxSpeed * (0.35 + 0.65 * (as > 1 ? 1 : as)), dist * ASSIST.approach);
+        const bst = f.ctrl.assistBoost;
+        const sp = Math.min(ASSIST.maxSpeed * (0.35 + 0.65 * (as > 1 ? 1 : as)) * bst, dist * ASSIST.approach * bst);
         const vdx = (dx / dist) * sp;
         const vdy = (dy / dist) * sp;
         ax = (vdx - k.vx) * ASSIST.gain * as * p.mass;
@@ -390,7 +396,7 @@ export function stepFlyer(f: Flyer, env: FlyerEnv, dt: number): void {
       relief = (f.tension01 - TENSION.arcadeRelief) * 70;
     }
     const dist = Math.sqrt((k.x - f.handX) ** 2 + (k.y - f.handY) ** 2 + (k.z - f.handZ) ** 2);
-    stepReel(f.reel, attached ? f.ctrl.reel : 0, f.tension01, dt, attached ? relief : 0, dist * 1.08 + 6);
+    stepReel(f.reel, attached ? f.ctrl.reel : 0, f.tension01, dt, attached ? relief : 0, f.ctrl.assist > 0 ? dist * 1.35 + 12 : dist * 1.08 + 6);
 
     if (f.tension01 > TENSION.red) {
       if (f.redTimer === 0) env.emit('redline', f.index, k.x, k.y, f.tension01);

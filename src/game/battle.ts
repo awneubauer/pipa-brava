@@ -131,6 +131,7 @@ export class BattleRules {
   private enemyHoldX = new Float32Array(3);
   private enemyHoldY = new Float32Array(3);
   private wasInDuel = new Uint8Array(3);
+  private reengage = new Float32Array(3);
 
   constructor(
     private w: World,
@@ -244,7 +245,7 @@ export class BattleRules {
 
   /** Puxão do jogador: a linha "serra" mais forte por um instante. */
   jerk(): void {
-    this.boost = 0.6;
+    this.boost = 1.1;
   }
 
   /**
@@ -261,7 +262,7 @@ export class BattleRules {
       // (ou as linhas ficarem soltas por mais de 0,7 s)
       for (let i = 0; i < cs.length; i++) {
         const c = cs[i];
-        if (c.active && c.a === 0 && c.b === this.duelEnemy && c.idle < 0.7) found = c;
+        if (c.active && c.a === 0 && c.b === this.duelEnemy && c.idle < 1.0) found = c;
       }
       const e = this.w.flyers[this.duelEnemy];
       if (!e || e.hidden || !isAlive(e)) found = null;
@@ -273,7 +274,14 @@ export class BattleRules {
         if (!c.active || c.a !== 0 || c.idle > 0.05) continue;
         const e = this.w.flyers[c.b];
         if (!e || e.hidden || !isAlive(e)) continue;
+        // a mesma pipa só engancha de novo depois de um respiro (evita liga-desliga)
+        if (this.reengage[c.b - 1] > 0) continue;
         const ai = this.ais[c.b - 1];
+        // só engancha se alguém está atacando: o inimigo vindo, ou você numa embicada/arrancada
+        const enemyAttacks = !!ai && (ai.state === 'aproximar' || ai.state === 'engajar');
+        const pv = Math.hypot(p.kite.vx, p.kite.vy);
+        const playerAttacks = this.boost > 0 || pv > 9;
+        if (!enemyAttacks && !playerAttacks) continue;
         const score = ai && ai.state === 'engajar' ? 2 : 1;
         if (score > bestScore) {
           bestScore = score;
@@ -283,6 +291,7 @@ export class BattleRules {
     }
     if (this.tapCooldown > 0) this.tapCooldown -= dt;
     if (this.feedbackT > 0) this.feedbackT -= dt;
+    for (let i = 0; i < this.reengage.length; i++) if (this.reengage[i] > 0) this.reengage[i] -= dt;
     if (!found) {
       if (this.duel) this.endDuel();
       return;
@@ -299,7 +308,7 @@ export class BattleRules {
       this.above = p.kite.y > e.kite.y + 1;
       const pv = Math.hypot(p.kite.vx, p.kite.vy);
       const ev = Math.hypot(e.kite.vx, e.kite.vy);
-      this.initiative = this.surprise || pv > ev * 1.1 ? 'voce' : 'ele';
+      this.initiative = this.surprise || this.boost > 0 || pv > ev * 1.1 ? 'voce' : 'ele';
       if (this.initiative === 'voce') c.dmgB += 0.15 / e.lineType.resistance;
       else c.dmgA += 0.08 + 0.02 * this.stats.wave * PLAYER_GUARD;
       this.duel = true;
@@ -307,12 +316,15 @@ export class BattleRules {
       this.duelTime = 0;
       this.holdX = p.kite.x;
       this.holdY = p.kite.y;
+      // o tranco do engate: as duas pipas param ali (as linhas não se soltam no embalo)
+      p.kite.vx = p.kite.vy = p.kite.vz = 0;
+      e.kite.vx = e.kite.vy = e.kite.vz = 0;
       this.enemyHoldX[slot] = e.kite.x;
       this.enemyHoldY[slot] = e.kite.y;
       this.wasInDuel[slot] = 1;
       this.marker = 0;
       this.markerDir = 1;
-      this.markerSpeed = Math.min(2, 0.6 + 0.08 * (this.stats.wave - 1) + (boss ? 0.25 : 0));
+      this.markerSpeed = Math.min(2.4, 0.55 + 0.1 * (this.stats.wave - 1) + (boss ? 0.25 : 0));
       const cerol = this.opts.cerol ?? 1;
       this.zoneHW = Math.min(
         0.22,
@@ -347,14 +359,13 @@ export class BattleRules {
     this.duelCross = c;
   }
 
-  /** Zona verde: no centro nas primeiras fases; depois passa a mudar de lugar, cada vez mais longe. */
+  /** Zona verde sempre no centro: a dificuldade vem da velocidade do marcador. */
   private newZone(): void {
-    const hw = this.zoneHW;
-    const range = Math.max(0, Math.min(0.5 - hw - 0.04, (this.stats.wave - 2.2) * 0.08));
-    this.zoneC = 0.5 + (this.rng() * 2 - 1) * range;
+    this.zoneC = 0.5;
   }
 
   private endDuel(): void {
+    if (this.duelEnemy > 0) this.reengage[this.duelEnemy - 1] = 1.5;
     for (let s = 0; s < this.ais.length; s++) {
       if (!this.wasInDuel[s]) continue;
       this.wasInDuel[s] = 0;

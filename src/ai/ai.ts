@@ -252,8 +252,10 @@ export class KiteAI {
       case 'recompor': {
         if (this.assist > 0) {
           // Batalha: ronda a pipa do jogador, à vista, sem atacar
-          const sway = Math.sin(time * 0.6 + this.seed) * 6;
-          this.tx = pk.x + this.orbit * (20 + (this.seed % 7)) + sway;
+          // ronda do lado da própria mão: as linhas não se cruzam sem querer
+          const sway = Math.sin(time * 0.6 + this.seed) * 5;
+          const side = f.baseX < player.baseX ? -1 : f.baseX > player.baseX ? 1 : this.orbit;
+          this.tx = pk.x + side * (20 + (this.seed % 7)) + sway;
           this.ty = pk.y + 4 + Math.cos(time * 0.5 + this.seed) * 6;
           break;
         }

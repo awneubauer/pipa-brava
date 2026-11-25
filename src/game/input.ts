@@ -12,6 +12,9 @@ export interface ControlState {
   joyX: number;
   joyY: number;
   joy: boolean;
+  /** botão PUXA!: segundo toque rápido (embicada) e segurando (dar linha) */
+  double: boolean;
+  hold: boolean;
 }
 
 interface TouchTrack {
@@ -47,7 +50,7 @@ export const JOY_MAX = 64;
  * Desktop: mouse no céu, W/S ou roda = carretel, espaço = puxão, A/D = curva.
  */
 export class Input {
-  readonly state: ControlState = { steer: 0, handX: 0, handY: 0, reel: 0, jerk: false, joyX: 0, joyY: 0, joy: false };
+  readonly state: ControlState = { steer: 0, handX: 0, handY: 0, reel: 0, jerk: false, joyX: 0, joyY: 0, joy: false, double: false, hold: false };
   /** 'easy': um dedo guia a pipa (joystick no céu, toque = puxão); 'pro': cabresto + lata */
   mode: 'easy' | 'pro' = 'easy';
   /** largura da faixa do carretel (px CSS) */
@@ -67,6 +70,7 @@ export class Input {
   usedSteer = 0;
   /** modo fácil: botão de ação (px CSS) e se está pressionado */
   readonly actionBtn = { x: 0, y: 0, r: 46, down: false };
+  private lastAction = 0;
 
   private tracks: TouchTrack[] = [];
   private keys = new Set<string>();
@@ -138,7 +142,15 @@ export class Input {
     // modo fácil: botão PUXA! no canto inferior direito
     if (this.mode === 'easy' && Math.hypot(x - this.actionBtn.x, y - this.actionBtn.y) < this.actionBtn.r + 16) {
       t.zone = 'action';
-      this.state.jerk = true;
+      const now = performance.now();
+      // segundo toque em até 0,3 s = embicada; senão = puxada
+      if (now - this.lastAction < 300) {
+        this.state.double = true;
+        this.lastAction = 0;
+      } else {
+        this.state.jerk = true;
+        this.lastAction = now;
+      }
       this.usedPull += 1;
     }
     t.t0 = performance.now();
@@ -202,7 +214,17 @@ export class Input {
       return;
     }
     if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
-    if (k === ' ' && !this.keys.has(' ')) this.requestJerk();
+    if (k === ' ' && !this.keys.has(' ')) {
+      const now = performance.now();
+      if (now - this.lastAction < 300) {
+        this.state.double = true;
+        this.lastAction = 0;
+      } else {
+        this.requestJerk();
+        this.lastAction = now;
+      }
+    }
+    if (k === 'e' && !this.keys.has('e')) this.state.double = true;
     this.keys.add(k);
   };
 
@@ -226,6 +248,7 @@ export class Input {
     let handY = 0;
     let reel = 0;
     let joy = false;
+    let hold = false;
     this.sky.active = false;
     this.actionBtn.down = false;
     this.reelTouch.active = false;
@@ -235,6 +258,8 @@ export class Input {
         if (t.id === -1) continue;
         if (t.zone === 'action') {
           this.actionBtn.down = true;
+          // segurando o botão por mais de 0,35 s = dar linha
+          if (performance.now() - t.t0 > 350) hold = true;
           continue;
         }
         if (t.zone === 'sky' && this.mode === 'easy') {
@@ -316,6 +341,7 @@ export class Input {
       } else this.wheel = 0;
     }
     s.joy = joy;
+    s.hold = hold || this.keys.has('shift');
     if (!joy) {
       s.joyX = 0;
       s.joyY = 0;
@@ -334,6 +360,13 @@ export class Input {
     s.handX = handX;
     s.handY = handY;
     s.reel = reel;
+  }
+
+  /** consome o pedido de embicada (toque duplo) */
+  takeDouble(): boolean {
+    const d = this.state.double;
+    this.state.double = false;
+    return d;
   }
 
   /** consome o pedido de puxão */

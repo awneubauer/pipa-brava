@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PHYSICS } from '../src/config';
-import { createEasyState, easyControl } from '../src/game/autopilot';
+import { createEasyState, easyControl, startManeuver } from '../src/game/autopilot';
 import { BattleRules } from '../src/game/battle';
 import { LEVELS, isUnlocked, starsFor } from '../src/game/levels';
 import { SKINS } from '../src/game/skins';
@@ -97,8 +97,55 @@ describe('Batalha no Céu (fases)', () => {
   it('com várias pipas no céu, o duelo não fica reiniciando (fases 3 a 7)', () => {
     for (const n of [3, 5, 6, 7]) {
       const r = playLevel(n, 5 + n, 1800, 60);
-      // cada duelo começa uma vez e termina num corte (ou na separação das linhas)
-      expect(r.starts).toBeLessThanOrEqual(r.b.stats.cuts + 4);
+      // cada duelo começa uma vez e quase sempre termina num corte (raramente as linhas se soltam)
+      expect(r.starts).toBeLessThanOrEqual(Math.ceil(r.b.stats.cuts * 1.5) + 2);
+    }
+  });
+
+  it('embicada (2 toques) engancha na linha do inimigo com vantagem; segurar (dar linha) foge do ataque', () => {
+    const orig = Math.random;
+    try {
+      let sd = 4;
+      Math.random = () => {
+        sd = (sd * 16807) % 2147483647;
+        return sd / 2147483647;
+      };
+      const lv = LEVELS[2];
+      const w = createWorld(getScene(lv.scene).world(), 'battle', { model: 'raia', color: '#f00', tail: '#ff0' });
+      const b = new BattleRules(w, 1, { onCut: () => {}, onWave: () => {}, onSpawn: () => {} }, { fixedWave: lv.wave, concurrent: lv.concurrent });
+      const p = w.flyers[0];
+      const es = createEasyState();
+      const tick = () => {
+        easyControl(p, false, 0, 0, false, es, PHYSICS.dt);
+        b.think(PHYSICS.dt);
+        stepWorld(w);
+        w.events.clear();
+        b.step(PHYSICS.dt);
+      };
+      for (let s = 0; s < 2 / PHYSICS.dt; s++) tick();
+      const e = w.flyers.find((f, i) => i > 0 && !f.hidden && isAlive(f));
+      expect(e).toBeTruthy();
+      if (!e) return;
+      // mira o ponto da linha dele mais perto e passa do outro lado
+      const bx = e.kite.x - e.handX;
+      const by = e.kite.y - e.handY;
+      let t = ((p.kite.x - e.handX) * bx + (p.kite.y - e.handY) * by) / (bx * bx + by * by);
+      t = Math.min(0.92, Math.max(0.35, t));
+      const lx = e.handX + bx * t;
+      const ly = e.handY + by * t;
+      const d = Math.hypot(lx - p.kite.x, ly - p.kite.y) || 1;
+      startManeuver(es, 'embicada', lx + ((lx - p.kite.x) / d) * 7, ly + ((ly - p.kite.y) / d) * 7);
+      b.jerk();
+      let took = -1;
+      for (let s = 0; s < 2 / PHYSICS.dt && took < 0; s++) {
+        tick();
+        if (b.duel) took = s * PHYSICS.dt;
+      }
+      expect(took).toBeGreaterThan(0);
+      expect(took).toBeLessThan(1.2);
+      expect(b.initiative).toBe('voce');
+    } finally {
+      Math.random = orig;
     }
   });
 

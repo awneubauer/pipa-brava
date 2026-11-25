@@ -11,13 +11,34 @@ import { clamp, wrapAngle } from '../util/noise';
  * - toque rápido = puxão: tranco + recolhida rápida, a pipa dispara.
  * A física é a mesma do modo Pro; só a mão do jogador é ajudada.
  */
+export type Maneuver = 'none' | 'puxada' | 'embicada' | 'linha';
+
 export interface EasyState {
   /** tempo restante do recolhimento rápido depois de um puxão */
   boost: number;
+  /** manobra de carretel em andamento e quanto falta */
+  move: Maneuver;
+  moveT: number;
+  /** alvo da embicada / direção da fuga */
+  mx: number;
+  my: number;
 }
 
 export function createEasyState(): EasyState {
-  return { boost: 0 };
+  return { boost: 0, move: 'none', moveT: 0, mx: 0, my: 0 };
+}
+
+/**
+ * Comandos de carretel (botão PUXA!):
+ * - puxada (1 toque): recolhe com força, a pipa dispara para onde o bico aponta;
+ * - embicada (2 toques): mergulho rápido no ponto (mx, my) — o ataque;
+ * - linha (segurar): dá linha, a pipa recua na direção (mx, my) — a fuga.
+ */
+export function startManeuver(st: EasyState, m: Maneuver, mx: number, my: number): void {
+  st.move = m;
+  st.moveT = m === 'puxada' ? 0.45 : m === 'embicada' ? 0.9 : 0.15;
+  st.mx = mx;
+  st.my = my;
 }
 
 export function easyControl(
@@ -25,6 +46,7 @@ export function easyControl(
   active: boolean,
   tx: number,
   ty: number,
+  // (os parâmetros podem ser sobrescritos por uma manobra em andamento)
   jerk: boolean,
   st: EasyState,
   dt: number,
@@ -34,6 +56,33 @@ export function easyControl(
   let steer = 0;
   let reel = 0;
   const L = f.reel.out;
+  c.assistBoost = 1;
+  let forceReel: number | null = null;
+  if (st.moveT > 0) {
+    st.moveT -= dt;
+    active = true;
+    if (st.move === 'puxada') {
+      // dispara para onde o bico aponta (e um pouco para cima)
+      tx = k.x + Math.cos(k.angle) * 18;
+      ty = k.y + Math.sin(k.angle) * 18 + 4;
+      c.assistBoost = 1.55;
+      forceReel = -0.6;
+      c.jerk = st.moveT > 0.4;
+    } else if (st.move === 'embicada') {
+      tx = st.mx;
+      ty = st.my;
+      c.assistBoost = 1.9;
+      // solta linha à vontade para alcançar o bote
+      const need = Math.hypot(tx - f.handX, ty - f.handY) * 1.15 + 3;
+      if (need > L) forceReel = 1;
+    } else if (st.move === 'linha') {
+      tx = k.x + st.mx * 12;
+      ty = k.y + st.my * 12;
+      c.assistBoost = 0.9;
+      forceReel = 0.8;
+    }
+    if (st.moveT <= 0) st.move = 'none';
+  }
   if (active) {
     // nunca mira dentro do chão
     const floor = f.baseY + 9;
@@ -64,6 +113,7 @@ export function easyControl(
   const d = Math.hypot(k.x - f.handX, k.y - f.handY, k.z - f.handZ);
   if (d < L - 2 && st.boost <= 0) reel = Math.min(reel, -clamp((L - d) / 10, 0.15, 0.6));
   if (f.tension01 > TENSION.yellow + 0.06) reel = Math.max(reel, 0.3);
+  if (forceReel !== null) reel = forceReel;
   c.assist = active ? 1 : 0;
   c.assistX = tx;
   c.assistY = ty < f.baseY + 9 ? f.baseY + 9 : ty;

@@ -11,7 +11,7 @@ import { Camera } from './camera';
 import { Input, JOY_MAX } from './input';
 import { FixedLoop } from './loop';
 import { MANEUVERS, ManeuverTracker } from './maneuvers';
-import { createEasyState, easyControl } from './autopilot';
+import { createEasyState, easyControl, startManeuver } from './autopilot';
 import { BattleRules } from './battle';
 import { LEVELS, goalText, starsFor, type LevelDef } from './levels';
 import { SimRules, type SimResult } from './sim';
@@ -79,6 +79,77 @@ export class Game {
   battle: BattleRules | null = null;
   level: LevelDef | null = null;
   private easy = createEasyState();
+  private bannerCd = 0;
+  /**
+   * Comandos de carretel no botão PUXA! (fora do duelo):
+   * 1 toque = puxada, 2 toques = embicada no inimigo mais próximo, segurar = dar linha (fuga).
+   */
+  private maneuvers(p: Flyer, single: boolean, dbl: boolean, hold: boolean): void {
+    const w = this.world;
+    if (!w) return;
+    const st = this.easy;
+    if (dbl) {
+      // embicada: mergulha atravessando a linha do inimigo mais próximo
+      let best: Flyer | null = null;
+      let bd = Infinity;
+      for (let i = 1; i < w.flyers.length; i++) {
+        const e = w.flyers[i];
+        if (e.hidden || !isAlive(e)) continue;
+        const d = Math.hypot(e.kite.x - p.kite.x, e.kite.y - p.kite.y);
+        if (d < bd) {
+          bd = d;
+          best = e;
+        }
+      }
+      let mx = p.kite.x + Math.cos(p.kite.angle) * 20;
+      let my = p.kite.y + Math.sin(p.kite.angle) * 20;
+      if (best) {
+        // ponto da linha dele mais perto da sua pipa, e passa um pouco do outro lado
+        const ax = best.handX;
+        const ay = best.handY;
+        const bx = best.kite.x - ax;
+        const by = best.kite.y - ay;
+        const bl2 = bx * bx + by * by || 1;
+        let t = ((p.kite.x - ax) * bx + (p.kite.y - ay) * by) / bl2;
+        t = t < 0.35 ? 0.35 : t > 0.92 ? 0.92 : t;
+        const lx = ax + bx * t;
+        const ly = ay + by * t;
+        const dx = lx - p.kite.x;
+        const dy = ly - p.kite.y;
+        const d = Math.hypot(dx, dy) || 1;
+        mx = lx + (dx / d) * 7;
+        my = ly + (dy / d) * 7;
+      }
+      startManeuver(st, 'embicada', mx, my);
+      this.popups.show('EMBICADA!', '', p.kite.x, p.kite.y + 3, false, 0.7, '#ff8a6b', 24, 'pop');
+      this.fx.burst(PKind.Spark, p.kite.x, p.kite.y, 14, 8, 0.4, 1);
+      this.audio.snapBreak();
+      this.vibrate([20, 20, 30]);
+      if (this.battle) this.battle.jerk();
+    } else if (single) {
+      startManeuver(st, 'puxada', 0, 0);
+      this.popups.show('PUXADA!', '', p.kite.x, p.kite.y + 3, false, 0.6, '#ffe680', 20, 'pop');
+      this.fx.burst(PKind.Spark, p.kite.x, p.kite.y, 8, 5, 0.3, 0);
+      this.audio.bump();
+      this.vibrate(15);
+    } else if (hold) {
+      // dar linha: recua para longe do inimigo mais perto e para baixo/trás
+      let ax = 0;
+      let bd = Infinity;
+      for (let i = 1; i < w.flyers.length; i++) {
+        const e = w.flyers[i];
+        if (e.hidden || !isAlive(e)) continue;
+        const d = Math.hypot(e.kite.x - p.kite.x, e.kite.y - p.kite.y);
+        if (d < bd) {
+          bd = d;
+          ax = p.kite.x >= e.kite.x ? 1 : -1;
+        }
+      }
+      if (st.move !== 'linha') this.popups.show('DANDO LINHA', '', p.kite.x, p.kite.y + 3, false, 0.6, '#9ff3ff', 18, 'pop');
+      startManeuver(st, 'linha', ax * 0.8, -0.6);
+    }
+  }
+
   /** resposta a um toque no duelo */
   private duelFeedback(r: 'perfeito' | 'corte' | 'erro' | null): void {
     if (!r || !this.world) return;
@@ -461,14 +532,16 @@ export class Game {
     this.input.update(PHYSICS.dt);
     const c = this.input.state;
     const jerk = this.input.takeJerk();
+    const dbl = this.input.takeDouble();
     if (this.input.mode === 'easy') {
       // joystick no canto: a pipa voa na direção empurrada (o carretel se ajusta sozinho)
       const on = c.joy;
       const tx = p.kite.x + (c.joyX / JOY_MAX) * 14;
       const ty = p.kite.y + (c.joyY / JOY_MAX) * 14;
       const inDuel = !!this.battle && this.battle.duel;
+      if (!inDuel) this.maneuvers(p, jerk, dbl, c.hold);
       if (inDuel) easyControl(p, true, (this.battle as BattleRules).holdX, (this.battle as BattleRules).holdY, false, this.easy, PHYSICS.dt);
-      else easyControl(p, on, tx, ty, jerk, this.easy, PHYSICS.dt);
+      else easyControl(p, on, tx, ty, false, this.easy, PHYSICS.dt);
     } else {
       p.ctrl.steer = c.steer;
       p.ctrl.handX = c.handX;
@@ -477,13 +550,8 @@ export class Game {
       p.ctrl.assist = 0;
       if (jerk) p.ctrl.jerk = true;
     }
-    if (jerk && this.battle) {
-      if (this.battle.duel) this.duelFeedback(this.battle.duelTap());
-      else {
-        this.battle.jerk();
-        this.fx.burst(PKind.Spark, p.kite.x, p.kite.y, 10, 6, 0.4, 0);
-      }
-    }
+    if ((jerk || dbl) && this.battle && this.battle.duel) this.duelFeedback(this.battle.duelTap());
+    else if (jerk && this.battle && this.input.mode !== 'easy') this.battle.jerk();
 
     if (this.sim) this.sim.think(PHYSICS.dt);
     if (this.battle) this.battle.think(PHYSICS.dt);
@@ -494,12 +562,14 @@ export class Game {
     if (this.battle) {
       const wasDuel = this.battle.duel;
       this.battle.step(PHYSICS.dt);
-      if (this.battle.duel && !wasDuel) {
+      if (this.bannerCd > 0) this.bannerCd -= PHYSICS.dt;
+      if (this.battle.duel && !wasDuel && this.bannerCd <= 0) {
+        this.bannerCd = 3;
         const b = this.battle;
         const mine = b.initiative === 'voce';
         const bonus = b.above && b.surprise ? 'Por cima e de surpresa!' : b.above ? 'Por cima: zona maior!' : b.surprise ? 'De surpresa: zona maior!' : '';
         const sub = mine ? bonus || 'Vantagem sua: já tirou um pedaço!' : 'Reaja: aperte CORTA! no verde';
-        this.popups.show(mine ? 'VOCÊ ATRAVESSOU!' : 'TE PEGARAM!', sub, this.w * 0.42, this.h * 0.3, true, 1.3, mine ? '#7dff5a' : '#ff8a6b', 34, 'banner');
+        this.popups.show(mine ? 'VOCÊ ATRAVESSOU!' : 'TE PEGARAM!', sub, this.w * 0.42, this.h * 0.3, true, 1.3, mine ? '#7dff5a' : '#ff8a6b', 28, 'banner');
         this.vibrate([30, 30, 30]);
         this.camera.shake(5);
       }
