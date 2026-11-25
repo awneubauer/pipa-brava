@@ -196,10 +196,11 @@ export class Menu {
     this.show(`<div class="panel help">
       <h2>Como jogar</h2>
       <ul>
-        <li><b>Céu:</b> arraste para o lado para girar a pipa (o cabresto se desloca). Arraste para baixo para puxar a linha e dar velocidade; para cima, dá linha.</li>
-        <li><b>Puxão:</b> um arrasto rápido para baixo dá um tranco na linha.</li>
-        <li><b>Carretel (faixa da direita):</b> arraste para baixo para soltar linha, para cima para recolher.</li>
-        <li><b>Computador:</b> mouse arrasta no céu, W/S ou a roda do mouse mexem no carretel, A/D giram, espaço dá o puxão, Shift puxa.</li>
+        <li><b>Céu:</b> arraste para os lados para girar a pipa (o cabresto se desloca). Ela anda para onde o bico aponta; tirando o dedo, a rabiola endireita.</li>
+        <li><b>Lata (faixa da direita):</b> deslize para baixo para soltar linha na velocidade do dedo; largue no embalo e a lata continua girando enquanto a pipa puxa. Deslize para cima para recolher: recolher é puxar, a pipa ganha força e sobe. Dedo parado segura a linha.</li>
+        <li><b>Como subir:</b> solte um pouco, segure e deixe a pipa subir de novo. Soltar demais deixa a linha frouxa e a pipa afunda.</li>
+        <li><b>Puxão:</b> deslizada rápida para cima na lata (ou arrasto rápido para baixo no céu).</li>
+        <li><b>Computador:</b> mouse arrasta no céu, A/D giram, S solta, W recolhe, roda do mouse gira a lata, espaço dá o puxão.</li>
         <li>Fique de olho na <b>tensão</b>: verde é o ideal; no vermelho a linha sofre.</li>
       </ul>
       <p class="safety">${esc(SAFETY_TEXT)}</p>

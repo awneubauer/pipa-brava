@@ -179,11 +179,18 @@ export function computeAero(
   return out;
 }
 
-/** Torque de curva do cabresto deslocado: braço lateral × tração (+ mínimo pelo vento). */
-export function steerTorque(p: KiteParams, steer: number, tension: number, qA: number): number {
-  // a tração satura: com a linha muito esticada a pipa não gira mais rápido que um limite
-  const drive = 8 * Math.tanh((tension + p.steerAssist * qA) / 8);
-  return -steer * p.bridleRange * drive;
+/**
+ * Torque de curva do cabresto deslocado. Ajuste de jogabilidade: o dedo pede uma
+ * velocidade de giro (proporcional ao deslocamento) e o cabresto gera o torque para
+ * chegar nela, com autoridade que depende do vento passando pela pipa (parada no
+ * ar ela gira devagar). Sem comando, não interfere: a rabiola endireita o bico.
+ */
+export function steerTorque(p: KiteParams, steer: number, omega: number, airspeed: number): number {
+  const a = steer < 0 ? -steer : steer;
+  if (a < 0.02) return 0;
+  const auth = airspeed > 6 ? 1 : airspeed < 1.5 ? 0.3 : 0.3 + ((airspeed - 1.5) / 4.5) * 0.7;
+  const target = -steer * p.turnRate * auth;
+  return (target - omega) * p.turnGain * (0.4 + 0.6 * a);
 }
 
 /** Integração semi-implícita de Euler. */

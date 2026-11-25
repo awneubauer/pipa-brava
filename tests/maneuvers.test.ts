@@ -33,8 +33,9 @@ describe('manobras do arcade', () => {
   });
 
   it('soltar linha até subir bastante gera recorde de altura', () => {
-    const { hits } = play(40, (_t, f) => {
-      f.ctrl.reel = 1;
+    // soltar em "giradas" da lata e segurar para a pipa subir de novo
+    const { hits } = play(50, (t, f) => {
+      f.ctrl.reel = t % 3 < 0.4 ? 0.5 : 0;
     });
     expect(hits).toContain('recorde');
   });

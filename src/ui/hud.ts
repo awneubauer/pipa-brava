@@ -116,7 +116,7 @@ export class Hud {
     ctx.font = F800_11;
     ctx.fillStyle = p.reel.rate < -0.5 ? '#ffe680' : 'rgba(255,255,255,0.85)';
     ctx.fillText('▲', cx, top + 126);
-    ctx.fillText('RECOLHER', cx, top + 142);
+    ctx.fillText('PUXAR', cx, top + 142);
     ctx.fillStyle = p.reel.rate > 0.5 ? '#ffe680' : 'rgba(255,255,255,0.85)';
     ctx.fillText('SOLTAR', cx, h - 40);
     ctx.fillText('▼', cx, h - 24);

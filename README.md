@@ -39,13 +39,13 @@ Cada push num branch gera um *Preview Deployment* com URL própria — é por el
 | Ação | Celular | Computador |
 | --- | --- | --- |
 | Girar a pipa (deslocar o cabresto) | arrastar no céu para os lados | mouse arrastando / A e D |
-| Puxar linha / dar linha | arrastar no céu para baixo / para cima | mouse arrastando / Shift puxa |
-| Puxão (pico de tensão por 0,25 s) | arrasto rápido para baixo | espaço |
-| Soltar linha | faixa da direita: arrastar para baixo | S / roda do mouse para baixo |
-| Recolher | faixa da direita: arrastar para cima | W / roda do mouse para cima |
+| Soltar linha | lata (faixa da direita): deslizar para baixo; largar no embalo deixa a lata girando | S / roda do mouse para baixo |
+| Recolher = puxar (a pipa ganha força e sobe) | lata: deslizar para cima | W / roda do mouse para cima |
+| Segurar a linha | dedo parado na lata | — |
+| Puxão (pico de tensão por 0,25 s) | deslizada rápida para cima na lata ou arrasto rápido para baixo no céu | espaço |
 | Pausa / som | botões no canto superior direito | Esc ou P / botão de som |
 
-Curva leve faz a pipa segurar um rumo inclinado; curva total faz loop. A linha só corre do carretel quando a pipa puxa: dar uns puxões enquanto solta faz a linha sair bem mais rápido.
+A pipa anda para onde o bico aponta; arrastar mais para o lado gira mais rápido (curva total = loop em ~1,3 s). Para subir: solte um pouco de linha, segure e deixe a pipa subir de novo. Soltar demais deixa a linha frouxa e a pipa afunda até você recolher.
 
 ## Estrutura
 
@@ -118,3 +118,13 @@ tests/                   testes Vitest
 - `tests/maneuvers.test.ts` — manobras do arcade detectadas.
 - `tests/scenes.test.ts` — os 4 cenários rodam 60 s com 3 adversários sem NaN; fio queima na Simulação e só quica no Arcade.
 - `tests/cut.test.ts` — (c) cruzamento entre linhas iguais resolve em 1,5–4 s de deslizamento (lateral, puxando e soltando; 2–4 m/s; tensões 0,4–0,6) e partida completa contra a IA.
+
+## Revisão de jogabilidade (carretel e manobra)
+
+Depois do primeiro teste no celular o controle foi refeito para ficar mais próximo do real:
+
+- **Carretel como lata.** A linha corre na velocidade do dedo (0,09 m por pixel, até 42 m/s). Largando no embalo, a lata continua girando e a pipa puxando arrasta mais linha (o giro livre perde força em ~0,8 s). Dedo parado na lata segura a linha. Antes era um joystick que só soltava com a pipa puxando, e parecia travado.
+- **Soltar sem a pipa puxar dá folga.** A linha sobra (dá para ver a barriga), a pipa perde força, vai para trás e desce devagar com a rabiola, até a linha esticar de novo. A folga máxima é de ~8% + 6 m.
+- **Recolher é puxar.** Recolher não trava mais com a linha esticada: puxa a pipa, que ganha força e sobe. O carretel só segura quando a tensão chega perto do vermelho (~0,8).
+- **Curva por velocidade de giro.** O deslocamento do dedo pede uma velocidade de giro (até 5 rad/s) que o cabresto persegue, com menos autoridade quando quase não passa vento pela pipa. A curva fica previsível, sem depender tanto da tensão.
+- **Arrastar no céu na vertical não puxa mais a linha.** Puxar agora é na lata; o arrasto rápido para baixo no céu continua dando o puxão.

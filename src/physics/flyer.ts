@@ -298,7 +298,7 @@ export function stepFlyer(f: Flyer, env: FlyerEnv, dt: number): void {
         }
       }
     }
-    torque += steerTorque(p, f.steer, T, aero.qA);
+    torque += steerTorque(p, f.steer, k.omega, aero.airspeed);
     f.tension = T;
     f.tension01 = T / f.lineType.breakForce;
 
@@ -353,7 +353,7 @@ export function stepFlyer(f: Flyer, env: FlyerEnv, dt: number): void {
       relief = (f.tension01 - TENSION.arcadeRelief) * 70;
     }
     const dist = Math.sqrt((k.x - f.handX) ** 2 + (k.y - f.handY) ** 2 + (k.z - f.handZ) ** 2);
-    stepReel(f.reel, attached ? f.ctrl.reel : 0, f.tension01, dt, attached ? relief : 0, dist * 1.03 + 2.5);
+    stepReel(f.reel, attached ? f.ctrl.reel : 0, f.tension01, dt, attached ? relief : 0, dist * 1.08 + 6);
 
     if (f.tension01 > TENSION.red) {
       if (f.redTimer === 0) env.emit('redline', f.index, k.x, k.y, f.tension01);

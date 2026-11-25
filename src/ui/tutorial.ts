@@ -11,14 +11,14 @@ interface Step {
 
 const STEPS: Step[] = [
   {
-    title: '1. Puxe a linha',
-    text: 'Arraste no <b>céu</b>: para os lados a pipa <b>gira</b>; para baixo você <b>puxa</b> e ela anda para onde o bico aponta.',
+    title: '1. Manobre',
+    text: 'Arraste no <b>céu</b> para os lados: a pipa <b>gira</b> e anda para onde o bico aponta. Tire o dedo e a rabiola deixa ela de bico para cima.',
     hand: 'sky',
-    done: (i) => i.usedSteer > 0.8 && i.usedPull > 0.4,
+    done: (i) => i.usedSteer > 0.8,
   },
   {
-    title: '2. Solte o carretel',
-    text: 'Arraste a <b>faixa da direita</b> para baixo para <b>soltar linha</b> e subir mais. Para cima, recolhe. Dica: dar uns puxões faz a linha correr mais.',
+    title: '2. Gire a lata',
+    text: 'Deslize a <b>lata</b> (faixa da direita) para <b>baixo</b> para soltar linha, como girar o carretel; largando no embalo ela continua girando. Para <b>cima</b> recolhe e <b>puxa</b>: a pipa ganha força e sobe. Dedo parado segura a linha.',
     hand: 'reel',
     done: (i) => i.usedReel > 1.2,
   },

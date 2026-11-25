@@ -62,6 +62,9 @@ export interface KiteParams {
   angDamp: number;
   /** Torque mínimo de controle com linha frouxa (fração da pressão dinâmica). */
   steerAssist: number;
+  /** Velocidade de giro máxima pedida pelo dedo (rad/s) e ganho do cabresto (N·m·s). */
+  turnRate: number;
+  turnGain: number;
   /** Raio de colisão (m). */
   radius: number;
 }
@@ -82,6 +85,8 @@ export const KITE: KiteParams = {
   tailDamp: 0.01,
   angDamp: 0.15,
   steerAssist: 0.35,
+  turnRate: 5,
+  turnGain: 0.32,
   radius: 0.45,
 };
 
@@ -98,10 +103,12 @@ export const REEL = {
   /** Recolher: até 300 u/s. */
   maxRetrieve: u(300),
   /** A pipa puxando solta mais rápido: multiplicador extra por tensão. */
-  pullBoost: 0.7,
-  /** Zona morta e curso do joystick do carretel (px CSS). */
-  deadZonePx: 6,
-  fullTravelPx: 110,
+  pullBoost: 0.6,
+  /** Lata: metros de linha por pixel arrastado, zona morta (px/s), puxão (px/s para cima) e giro livre (s). */
+  metersPerPx: 0.09,
+  deadZonePx: 25,
+  jerkPx: 1400,
+  spoolDecay: 0.8,
 };
 
 export const TENSION = {
@@ -112,7 +119,7 @@ export const TENSION = {
   /** Segundos acumulados na vermelha até arrebentar (simulação). */
   redBreakTime: 1.5,
   /** Arcade: acima disto o carretel alivia sozinho. */
-  arcadeRelief: 0.74,
+  arcadeRelief: 0.84,
 };
 
 export type LineTypeId = 'comum' | 'afiada' | 'super';

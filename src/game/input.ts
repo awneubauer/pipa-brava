@@ -20,6 +20,10 @@ interface TouchTrack {
   lastY: number;
   lastT: number;
   vy: number;
+  /** posição no último update (para a velocidade do dedo no carretel) */
+  prevY: number;
+  /** velocidade suavizada do dedo (px/s) */
+  spd: number;
 }
 
 const SKY_STEER_PX = 78;
@@ -52,13 +56,16 @@ export class Input {
 
   private tracks: TouchTrack[] = [];
   private keys = new Set<string>();
+  /** giro livre da lata depois de soltar o dedo [0..1] */
+  private spool = 0;
+  private reelCmd = 0;
   private wheel = 0;
   private jerkCooldown = 0;
   private w = 400;
 
   constructor(private el: HTMLElement) {
     for (let i = 0; i < MAX_TRACKS; i++)
-      this.tracks.push({ id: -1, zone: 'sky', sx: 0, sy: 0, x: 0, y: 0, lastY: 0, lastT: 0, vy: 0 });
+      this.tracks.push({ id: -1, zone: 'sky', sx: 0, sy: 0, x: 0, y: 0, lastY: 0, lastT: 0, vy: 0, prevY: 0, spd: 0 });
     el.addEventListener('pointerdown', this.down, { passive: false });
     window.addEventListener('pointermove', this.move, { passive: false });
     window.addEventListener('pointerup', this.up);
@@ -114,6 +121,10 @@ export class Input {
     t.lastY = y;
     t.lastT = performance.now();
     t.vy = 0;
+    t.prevY = y;
+    t.spd = 0;
+    // encostar na lata trava a linha
+    if (t.zone === 'reel') this.spool = 0;
     try {
       this.el.setPointerCapture(e.pointerId);
     } catch {
@@ -137,14 +148,17 @@ export class Input {
 
   private up = (e: PointerEvent): void => {
     const t = this.findTrack(e.pointerId);
-    if (t) t.id = -1;
+    if (!t) return;
+    // largou a lata girando para soltar: ela continua girando (a pipa puxa a linha)
+    if (t.zone === 'reel' && this.reelCmd > 0.08) this.spool = this.reelCmd;
+    t.id = -1;
   };
 
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();
     this.gesture();
-    // roda para baixo = soltar, para cima = recolher
-    this.wheel = clamp(this.wheel + e.deltaY * 0.006, -1.4, 1.4);
+    // roda para baixo = soltar (gira a lata), para cima = recolher
+    this.wheel = clamp(this.wheel + e.deltaY * 0.004, -1, 1);
   };
 
   private keyDown = (e: KeyboardEvent): void => {
@@ -189,7 +203,8 @@ export class Input {
           const dy = t.y - t.sy;
           steer = clamp(dx / SKY_STEER_PX, -1, 1);
           handX = steer * 0.6;
-          handY = clamp(-dy / SKY_PULL_PX, -1, 1);
+          // arrastar para cima/baixo não puxa mais; só o arrasto rápido para baixo dá o puxão
+          void SKY_PULL_PX;
           if (t.vy > JERK_SPEED && dy > 18) {
             this.requestJerk();
             t.vy = 0;
@@ -200,21 +215,30 @@ export class Input {
           this.sky.x = t.x;
           this.sky.y = t.y;
           if (Math.abs(steer) > 0.3) this.usedSteer += dt;
-          if (handY < -0.3) this.usedPull += dt * 0.5;
+          if (Math.abs(steer) > 0.3) this.usedPull += dt * 0.5;
         } else {
-          const dy = t.y - t.sy;
-          const a = Math.abs(dy);
-          if (a > REEL.deadZonePx) {
-            reel = Math.sign(dy) * clamp((a - REEL.deadZonePx) / (REEL.fullTravelPx - REEL.deadZonePx), 0, 1);
-            // curva suave: controle fino no começo
-            reel = Math.sign(reel) * Math.pow(Math.abs(reel), 1.5);
-          }
+          // lata: a linha corre na velocidade do dedo (baixo solta, cima recolhe)
+          const fy = dt > 0 ? (t.y - t.prevY) / dt : 0;
+          t.prevY = t.y;
+          t.spd += (fy - t.spd) * 0.55;
+          const ms = t.spd * REEL.metersPerPx;
+          reel = ms > 0 ? ms / REEL.maxRelease : ms / REEL.maxRetrieve;
+          if (Math.abs(t.spd) < REEL.deadZonePx) reel = 0;
+          reel = clamp(reel, -1, 1);
           this.reelTouch.active = true;
           this.reelTouch.sy = t.sy;
           this.reelTouch.y = t.y;
-          if (reel > 0.1) this.usedReel += dt;
+          if (reel > 0.05) this.usedReel += dt;
+          // deslizada rápida para cima = puxão
+          if (t.spd < -REEL.jerkPx) this.requestJerk();
         }
       }
+      if (!this.reelTouch.active && this.spool > 0) {
+        reel = this.spool;
+        this.spool *= Math.exp(-dt / REEL.spoolDecay);
+        if (this.spool < 0.03) this.spool = 0;
+      }
+      this.reelCmd = reel;
       // teclado
       const k = this.keys;
       if (k.has('a') || k.has('arrowleft')) steer = -1;
@@ -224,15 +248,14 @@ export class Input {
         this.usedSteer += dt;
       }
       if (k.has('s') || k.has('arrowdown')) {
-        reel = 1;
+        reel = 0.5;
         this.usedReel += dt;
       }
-      if (k.has('w') || k.has('arrowup')) reel = -1;
-      if (k.has('shift')) handY = -1;
+      if (k.has('w') || k.has('arrowup')) reel = -0.6;
       if (Math.abs(this.wheel) > 0.02) {
         reel = clamp(reel + this.wheel, -1, 1);
         if (this.wheel > 0.1) this.usedReel += dt;
-        this.wheel *= Math.exp(-dt * 4);
+        this.wheel *= Math.exp(-dt * 3);
       } else this.wheel = 0;
     }
     s.steer = steer;
