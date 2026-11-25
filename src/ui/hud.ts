@@ -378,6 +378,38 @@ export class Hud {
     }
     // botão de ação
     if (!info.battle) return;
+    // mira da embicada: para onde o joystick empurra (ou para onde o bico aponta)
+    if (!info.battle.duel && info.player.status === 'flying') {
+      const k = info.player.kite;
+      let dx = Math.cos(k.angle);
+      let dy = Math.sin(k.angle);
+      if (input.state.joy) {
+        const m = Math.hypot(input.state.joyX, input.state.joyY) || 1;
+        dx = input.state.joyX / m;
+        dy = input.state.joyY / m;
+      }
+      const kx = info.cam.toScreenX(k.x);
+      const ky = info.cam.toScreenY(k.y);
+      const ax = kx + dx * 34;
+      const ay = ky - dy * 34;
+      const bx = kx + dx * 70;
+      const by = ky - dy * 70;
+      ctx.strokeStyle = 'rgba(255,138,107,0.85)';
+      ctx.lineWidth = 3;
+      ctx.setLineDash(GUIDE_DASH);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+      ctx.setLineDash(NO_DASH);
+      ctx.fillStyle = 'rgba(255,138,107,0.95)';
+      ctx.beginPath();
+      ctx.moveTo(bx + dx * 10, by - dy * 10);
+      ctx.lineTo(bx - dy * 7, by - dx * 7);
+      ctx.lineTo(bx + dy * 7, by + dx * 7);
+      ctx.closePath();
+      ctx.fill();
+    }
     const a = input.actionBtn;
     const duel = info.battle.duel;
     const pulse = duel ? 1 + 0.06 * Math.sin(this.duelT * 14) : 1;
@@ -398,7 +430,7 @@ export class Hud {
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
       ctx.textAlign = 'right';
       ctx.fillText('1x  puxada (dispara)', a.x + a.r, a.y - a.r - 44);
-      ctx.fillText('2x  EMBICADA (ataque)', a.x + a.r, a.y - a.r - 30);
+      ctx.fillText('2x  EMBICADA (na mira)', a.x + a.r, a.y - a.r - 30);
       ctx.fillText('segure  dar linha (foge)', a.x + a.r, a.y - a.r - 16);
     }
   }
@@ -537,7 +569,7 @@ export class Hud {
       ctx.fillStyle = '#ffffff';
       ctx.fillText('Polegar esquerdo pilota a pipa', w / 2, info.cam.h - 220);
       ctx.fillStyle = '#ffe680';
-      ctx.fillText('2 toques no PUXA! = embicada no inimigo', w / 2, info.cam.h - 201);
+      ctx.fillText('Mire e dê 2 toques no PUXA! = embicada', w / 2, info.cam.h - 201);
       ctx.globalAlpha = 1;
     }
   }

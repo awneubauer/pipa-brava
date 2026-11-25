@@ -126,15 +126,31 @@ describe('Batalha no Céu (fases)', () => {
       const e = w.flyers.find((f, i) => i > 0 && !f.hidden && isAlive(f));
       expect(e).toBeTruthy();
       if (!e) return;
-      // mira o ponto da linha dele mais perto e passa do outro lado
-      const bx = e.kite.x - e.handX;
-      const by = e.kite.y - e.handY;
-      let t = ((p.kite.x - e.handX) * bx + (p.kite.y - e.handY) * by) / (bx * bx + by * by);
-      t = Math.min(0.92, Math.max(0.35, t));
-      const lx = e.handX + bx * t;
-      const ly = e.handY + by * t;
-      const d = Math.hypot(lx - p.kite.x, ly - p.kite.y) || 1;
-      startManeuver(es, 'embicada', lx + ((lx - p.kite.x) / d) * 7, ly + ((ly - p.kite.y) / d) * 7);
+      // ponto da linha dele mais perto da sua pipa
+      const linePoint = () => {
+        const bx = e.kite.x - e.handX;
+        const by = e.kite.y - e.handY;
+        let t = ((p.kite.x - e.handX) * bx + (p.kite.y - e.handY) * by) / (bx * bx + by * by);
+        t = Math.min(0.92, Math.max(0.35, t));
+        return { x: e.handX + bx * t, y: e.handY + by * t };
+      };
+      // chega perto pilotando, depois mira e embica (a embicada vai reto na mira, ~22 m)
+      for (let s = 0; s < 6 / PHYSICS.dt; s++) {
+        const lp = linePoint();
+        if (Math.hypot(lp.x - p.kite.x, lp.y - p.kite.y) < 12 || b.duel) break;
+        easyControl(p, true, lp.x, lp.y, false, es, PHYSICS.dt);
+        b.think(PHYSICS.dt);
+        stepWorld(w);
+        w.events.clear();
+        b.step(PHYSICS.dt);
+      }
+      if (b.duel) {
+        expect(b.initiative).toBe('voce');
+        return;
+      }
+      const lp = linePoint();
+      const d = Math.hypot(lp.x - p.kite.x, lp.y - p.kite.y) || 1;
+      startManeuver(es, 'embicada', p.kite.x + ((lp.x - p.kite.x) / d) * 22, p.kite.y + ((lp.y - p.kite.y) / d) * 22);
       b.jerk();
       let took = -1;
       for (let s = 0; s < 2 / PHYSICS.dt && took < 0; s++) {

@@ -55,6 +55,9 @@ export interface BattleResult {
 
 const DPR_LEVELS = [2, 1.6, 1.3, 1];
 
+/** alcance da embicada (m) */
+const EMBICADA_DIST = 22;
+
 export interface GameHooks {
   onPause: () => void;
   onExit: (r: GameResult) => void;
@@ -89,38 +92,16 @@ export class Game {
     if (!w) return;
     const st = this.easy;
     if (dbl) {
-      // embicada: mergulha atravessando a linha do inimigo mais próximo
-      let best: Flyer | null = null;
-      let bd = Infinity;
-      for (let i = 1; i < w.flyers.length; i++) {
-        const e = w.flyers[i];
-        if (e.hidden || !isAlive(e)) continue;
-        const d = Math.hypot(e.kite.x - p.kite.x, e.kite.y - p.kite.y);
-        if (d < bd) {
-          bd = d;
-          best = e;
-        }
+      // embicada: dispara reto para onde a pipa está mirando (joystick, ou o bico se o polegar estiver solto)
+      const c = this.input.state;
+      let dx = Math.cos(p.kite.angle);
+      let dy = Math.sin(p.kite.angle);
+      if (c.joy) {
+        const m = Math.hypot(c.joyX, c.joyY) || 1;
+        dx = c.joyX / m;
+        dy = c.joyY / m;
       }
-      let mx = p.kite.x + Math.cos(p.kite.angle) * 20;
-      let my = p.kite.y + Math.sin(p.kite.angle) * 20;
-      if (best) {
-        // ponto da linha dele mais perto da sua pipa, e passa um pouco do outro lado
-        const ax = best.handX;
-        const ay = best.handY;
-        const bx = best.kite.x - ax;
-        const by = best.kite.y - ay;
-        const bl2 = bx * bx + by * by || 1;
-        let t = ((p.kite.x - ax) * bx + (p.kite.y - ay) * by) / bl2;
-        t = t < 0.35 ? 0.35 : t > 0.92 ? 0.92 : t;
-        const lx = ax + bx * t;
-        const ly = ay + by * t;
-        const dx = lx - p.kite.x;
-        const dy = ly - p.kite.y;
-        const d = Math.hypot(dx, dy) || 1;
-        mx = lx + (dx / d) * 7;
-        my = ly + (dy / d) * 7;
-      }
-      startManeuver(st, 'embicada', mx, my);
+      startManeuver(st, 'embicada', p.kite.x + dx * EMBICADA_DIST, p.kite.y + dy * EMBICADA_DIST);
       this.popups.show('EMBICADA!', '', p.kite.x, p.kite.y + 3, false, 0.7, '#ff8a6b', 24, 'pop');
       this.fx.burst(PKind.Spark, p.kite.x, p.kite.y, 14, 8, 0.4, 1);
       this.audio.snapBreak();

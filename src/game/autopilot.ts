@@ -36,7 +36,7 @@ export function createEasyState(): EasyState {
  */
 export function startManeuver(st: EasyState, m: Maneuver, mx: number, my: number): void {
   st.move = m;
-  st.moveT = m === 'puxada' ? 0.45 : m === 'embicada' ? 0.9 : 0.15;
+  st.moveT = m === 'puxada' ? 0.45 : m === 'embicada' ? 0.6 : 0.15;
   st.mx = mx;
   st.my = my;
 }
