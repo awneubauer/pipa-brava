@@ -36,7 +36,7 @@ export function createEasyState(): EasyState {
  */
 export function startManeuver(st: EasyState, m: Maneuver, mx: number, my: number): void {
   st.move = m;
-  st.moveT = m === 'puxada' ? 0.45 : m === 'embicada' ? 0.6 : 0.12;
+  st.moveT = m === 'puxada' ? 0.3 : m === 'embicada' ? 0.6 : 0.12;
   st.mx = mx;
   st.my = my;
 }
@@ -63,11 +63,11 @@ export function easyControl(
     active = true;
     if (st.move === 'puxada') {
       // dispara para onde o bico aponta (e um pouco para cima)
-      tx = k.x + Math.cos(k.angle) * 18;
-      ty = k.y + Math.sin(k.angle) * 18 + 4;
-      c.assistBoost = 1.55;
-      forceReel = -0.6;
-      c.jerk = st.moveT > 0.4;
+      // puxadinha curta: bem menos que a embicada
+      tx = k.x + Math.cos(k.angle) * 5;
+      ty = k.y + Math.sin(k.angle) * 5 + 1.5;
+      c.assistBoost = 1;
+      forceReel = -0.35;
     } else if (st.move === 'embicada') {
       tx = st.mx;
       ty = st.my;
