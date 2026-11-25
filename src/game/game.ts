@@ -496,8 +496,10 @@ export class Game {
       this.battle.step(PHYSICS.dt);
       if (this.battle.duel && !wasDuel) {
         const b = this.battle;
-        const sub = b.above && b.surprise ? 'Por cima e de surpresa!' : b.above ? 'Por cima! Zona maior' : b.surprise ? 'De surpresa! Zona maior' : 'Aperte PUXA! na hora certa';
-        this.popups.show('ENGANCHOU!', sub, this.w * 0.42, this.h * 0.3, true, 1.3, '#ffd400', 40, 'banner');
+        const mine = b.initiative === 'voce';
+        const bonus = b.above && b.surprise ? 'Por cima e de surpresa!' : b.above ? 'Por cima: zona maior!' : b.surprise ? 'De surpresa: zona maior!' : '';
+        const sub = mine ? bonus || 'Vantagem sua: já tirou um pedaço!' : 'Reaja: aperte CORTA! no verde';
+        this.popups.show(mine ? 'VOCÊ ATRAVESSOU!' : 'TE PEGARAM!', sub, this.w * 0.42, this.h * 0.3, true, 1.3, mine ? '#7dff5a' : '#ff8a6b', 34, 'banner');
         this.vibrate([30, 30, 30]);
         this.camera.shake(5);
       }

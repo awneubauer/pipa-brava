@@ -9,7 +9,7 @@ import { createWorld, stepWorld } from '../src/physics/world';
 import { getScene } from '../src/scenes/index';
 import { flatEnv, makeFlyer, run, steadyWind } from './helpers';
 
-function playLevel(n: number, seed: number, rub = 1800) {
+function playLevel(n: number, seed: number, rub = 1800, limit = 120) {
   const lv = LEVELS[n - 1];
   const orig = Math.random;
   let sd = seed;
@@ -22,7 +22,9 @@ function playLevel(n: number, seed: number, rub = 1800) {
     const b = new BattleRules(w, 1, { onCut: () => {}, onWave: () => {}, onSpawn: () => {} }, { fixedWave: lv.wave, concurrent: lv.concurrent, boss: lv.goal === 'boss' });
     const p = w.flyers[0];
     const es = createEasyState();
-    for (let s = 0; s < 120 / PHYSICS.dt; s++) {
+    let starts = 0;
+    let wasDuel = false;
+    for (let s = 0; s < limit / PHYSICS.dt; s++) {
       // jogador robô: atravessa a linha do inimigo mais próximo, mexendo o dedo
       let best = null as (typeof w.flyers)[number] | null;
       let bd = 1e9;
@@ -51,12 +53,14 @@ function playLevel(n: number, seed: number, rub = 1800) {
       w.events.clear();
       // no duelo, o robô aperta CORTA! quando o marcador está na zona (se `rub` > 0)
       b.step(PHYSICS.dt);
+      if (b.duel && !wasDuel) starts++;
+      wasDuel = b.duel;
       if (rub > 0 && b.duel && Math.abs(b.marker - b.zoneC) < b.zoneHW * 0.7) b.duelTap();
       for (const f of w.flyers) expect(Number.isFinite(f.kite.x + f.kite.y + f.kite.z)).toBe(true);
-      if (!isAlive(p)) return { win: false, b };
-      if (lv.goal === 'cut' && b.stats.cuts >= lv.target) return { win: true, b };
+      if (!isAlive(p)) return { win: false, b, starts };
+      if (lv.goal === 'cut' && b.stats.cuts >= lv.target) return { win: true, b, starts };
     }
-    return { win: false, b };
+    return { win: false, b, starts };
   } finally {
     Math.random = orig;
   }
@@ -88,6 +92,14 @@ describe('Batalha no Céu (fases)', () => {
     const r = playLevel(2, 7);
     expect(r.win).toBe(true);
     expect(r.b.stats.time).toBeLessThan(60);
+  });
+
+  it('com várias pipas no céu, o duelo não fica reiniciando (fases 3 a 7)', () => {
+    for (const n of [3, 5, 6, 7]) {
+      const r = playLevel(n, 5 + n, 1800, 60);
+      // cada duelo começa uma vez e termina num corte (ou na separação das linhas)
+      expect(r.starts).toBeLessThanOrEqual(r.b.stats.cuts + 4);
+    }
   });
 
   it('apertar sem parar (spam) erra e perde', () => {

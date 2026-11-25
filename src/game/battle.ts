@@ -112,6 +112,8 @@ export class BattleRules {
   marker = 0;
   zoneC = 0.5;
   zoneHW = 0.08;
+  /** quem atravessou a linha (ganha vantagem no duelo) */
+  initiative: 'voce' | 'ele' = 'voce';
   /** bônus do duelo: pegou por cima / de surpresa */
   above = false;
   surprise = false;
@@ -254,12 +256,30 @@ export class BattleRules {
     const cs = this.cuts.crossings;
     const p = this.player;
     let found: Crossing | null = null;
-    for (let i = 0; i < cs.length; i++) {
-      const c = cs[i];
-      if (!c.active || c.a !== 0 || c.idle > 0.15) continue;
-      const e = this.w.flyers[c.b];
-      if (!e || e.hidden || !isAlive(e)) continue;
-      if (!found || c.b === this.duelEnemy) found = c;
+    if (this.duel) {
+      // duelo travado: só a pipa enganchada conta, até alguém ser cortado
+      // (ou as linhas ficarem soltas por mais de 0,7 s)
+      for (let i = 0; i < cs.length; i++) {
+        const c = cs[i];
+        if (c.active && c.a === 0 && c.b === this.duelEnemy && c.idle < 0.7) found = c;
+      }
+      const e = this.w.flyers[this.duelEnemy];
+      if (!e || e.hidden || !isAlive(e)) found = null;
+    } else {
+      // começa com quem está atacando (se houver), senão com qualquer cruzamento novo
+      let bestScore = -1;
+      for (let i = 0; i < cs.length; i++) {
+        const c = cs[i];
+        if (!c.active || c.a !== 0 || c.idle > 0.05) continue;
+        const e = this.w.flyers[c.b];
+        if (!e || e.hidden || !isAlive(e)) continue;
+        const ai = this.ais[c.b - 1];
+        const score = ai && ai.state === 'engajar' ? 2 : 1;
+        if (score > bestScore) {
+          bestScore = score;
+          found = c;
+        }
+      }
     }
     if (this.tapCooldown > 0) this.tapCooldown -= dt;
     if (this.feedbackT > 0) this.feedbackT -= dt;
@@ -271,11 +291,17 @@ export class BattleRules {
     const e = this.w.flyers[c.b];
     const slot = c.b - 1;
     const boss = e.visualScale > 1;
-    if (!this.duel || this.duelEnemy !== c.b) {
-      // começa o duelo: por cima e de surpresa a zona fica maior
+    if (!this.duel) {
+      // começa o duelo. Quem atravessou a linha (veio mais rápido) leva vantagem;
+      // por cima e de surpresa a zona fica maior
       const ai = this.ais[slot];
       this.surprise = !!ai && ai.state === 'patrulhar';
       this.above = p.kite.y > e.kite.y + 1;
+      const pv = Math.hypot(p.kite.vx, p.kite.vy);
+      const ev = Math.hypot(e.kite.vx, e.kite.vy);
+      this.initiative = this.surprise || pv > ev * 1.1 ? 'voce' : 'ele';
+      if (this.initiative === 'voce') c.dmgB += 0.15 / e.lineType.resistance;
+      else c.dmgA += 0.08 + 0.02 * this.stats.wave * PLAYER_GUARD;
       this.duel = true;
       this.duelEnemy = c.b;
       this.duelTime = 0;
@@ -286,9 +312,12 @@ export class BattleRules {
       this.wasInDuel[slot] = 1;
       this.marker = 0;
       this.markerDir = 1;
-      this.markerSpeed = Math.min(2.2, 0.75 + 0.07 * (this.stats.wave - 1) + (boss ? 0.3 : 0));
+      this.markerSpeed = Math.min(2, 0.6 + 0.08 * (this.stats.wave - 1) + (boss ? 0.25 : 0));
       const cerol = this.opts.cerol ?? 1;
-      this.zoneHW = Math.min(0.2, 0.085 * (1 + 0.15 * (cerol - 1)) * (this.above ? 1.35 : 1) * (this.surprise ? 1.25 : 1));
+      this.zoneHW = Math.min(
+        0.22,
+        0.095 * (1 + 0.15 * (cerol - 1)) * (this.above ? 1.3 : 1) * (this.surprise ? 1.15 : 1) * (this.initiative === 'voce' ? 1.2 : 0.85),
+      );
       this.newZone();
     }
     this.duelTime += dt;
@@ -318,9 +347,11 @@ export class BattleRules {
     this.duelCross = c;
   }
 
+  /** Zona verde: no centro nas primeiras fases; depois passa a mudar de lugar, cada vez mais longe. */
   private newZone(): void {
     const hw = this.zoneHW;
-    this.zoneC = hw + 0.05 + this.rng() * (1 - 2 * (hw + 0.05));
+    const range = Math.max(0, Math.min(0.5 - hw - 0.04, (this.stats.wave - 2.2) * 0.08));
+    this.zoneC = 0.5 + (this.rng() * 2 - 1) * range;
   }
 
   private endDuel(): void {

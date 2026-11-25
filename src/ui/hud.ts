@@ -598,7 +598,11 @@ export class Hud {
       ctx.fillText(b.feedback === 'erro' ? 'ERROU! Espere a zona verde' : b.feedback === 'perfeito' ? 'PERFEITO!' : 'CORTE!', x0 + pw / 2, y0 + 84);
     } else {
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(b.above ? 'POR CIMA! · aperte CORTA! no verde' : b.surprise ? 'SURPRESA! · aperte CORTA! no verde' : 'Aperte CORTA! no verde', x0 + pw / 2, y0 + 84);
+      ctx.fillText(
+        b.initiative === 'voce' ? (b.above ? 'VANTAGEM + POR CIMA · CORTA! no verde' : 'VANTAGEM SUA · CORTA! no verde') : 'ELE ATACOU · CORTA! no verde',
+        x0 + pw / 2,
+        y0 + 84,
+      );
     }
     void w;
   }
