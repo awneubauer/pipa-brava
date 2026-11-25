@@ -1,4 +1,17 @@
-import { DIFFICULTIES, GAME_TITLE, LINE_TYPES, SAFETY_TEXT, type DifficultyId, type LineTypeId, type ModeId } from '../config';
+import {
+  COLORS,
+  DIFFICULTIES,
+  GAME_TITLE,
+  KITE_MODEL_NAMES,
+  KITE_MODELS,
+  LINE_TYPES,
+  SAFETY_TEXT,
+  type DifficultyId,
+  type KiteModel,
+  type LineTypeId,
+  type ModeId,
+} from '../config';
+import { drawKiteShape, shade } from '../render/kiteArt';
 import type { GameResult } from '../game/game';
 import type { SaveData } from '../game/state';
 import { bestKey, writeSave } from '../game/state';
@@ -11,6 +24,8 @@ export interface MenuHooks {
   restart: () => void;
   quit: () => void;
   toMenu: () => void;
+  /** cenário escolhido no menu mudou (atualiza o fundo animado) */
+  sceneChanged?: (scene: SceneId) => void;
 }
 
 function esc(s: string): string {
@@ -70,6 +85,7 @@ export class Menu {
       <div class="scenes">${cards}</div>
       <button class="big play" data-action="play">Soltar pipa!</button>
       <div class="row">
+        <button class="small" data-action="custom">Personalizar pipa</button>
         <button class="small" data-action="help">Como jogar</button>
       </div>
     </div>`);
@@ -95,6 +111,77 @@ export class Menu {
       <h3>Sua linha</h3><div class="chips">${lines}</div>
       <p class="muted small-note">Vença na Média para liberar a Afiada; na Brava, a Super afiada.</p>
     </div>`;
+  }
+
+  custom(): void {
+    const st = this.save().settings;
+    const models = KITE_MODELS.map(
+      (m) => `<button class="model ${st.model === m ? 'sel' : ''}" data-model="${m}"><canvas width="64" height="64" data-preview="${m}"></canvas>${KITE_MODEL_NAMES[m]}</button>`,
+    ).join('');
+    const sw = (attr: string, cur: string) =>
+      COLORS.map((c) => `<button class="sw ${cur === c ? 'sel' : ''}" style="background:${c}" data-${attr}="${c}" aria-label="cor ${c}"></button>`).join('');
+    this.show(`<div class="panel custom">
+      <h2>Sua pipa</h2>
+      <canvas class="kite-preview" width="180" height="200" data-preview="big"></canvas>
+      <h3>Modelo</h3>
+      <div class="models">${models}</div>
+      <h3>Cor da pipa</h3>
+      <div class="swatches">${sw('color', st.color)}</div>
+      <h3>Cor da rabiola</h3>
+      <div class="swatches">${sw('tail', st.tail)}</div>
+      <button class="big" data-action="home">Pronto</button>
+    </div>`);
+    this.drawPreviews();
+  }
+
+  private drawPreviews(): void {
+    const st = this.save().settings;
+    const accent = st.tail === st.color ? '#ffffff' : st.tail;
+    this.root.querySelectorAll<HTMLCanvasElement>('canvas[data-preview]').forEach((c) => {
+      const g = c.getContext('2d');
+      if (!g) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const w = c.width;
+      const h = c.height;
+      c.width = w * dpr;
+      c.height = h * dpr;
+      c.style.width = w + 'px';
+      c.style.height = h + 'px';
+      g.scale(dpr, dpr);
+      const big = c.dataset.preview === 'big';
+      const model = (big ? st.model : c.dataset.preview) as KiteModel;
+      const size = big ? 52 : 22;
+      const cx = w / 2;
+      const cy = big ? 74 : h / 2 - 2;
+      if (big) {
+        // rabiola de laços
+        g.strokeStyle = 'rgba(255,255,255,0.7)';
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.moveTo(cx, cy + size);
+        for (let i = 1; i <= 8; i++) g.lineTo(cx + Math.sin(i * 0.8) * 10, cy + size + i * 14);
+        g.stroke();
+        for (let i = 1; i <= 8; i++) {
+          const x = cx + Math.sin(i * 0.8) * 10;
+          const y = cy + size + i * 14;
+          g.fillStyle = i % 2 ? st.tail : shade(st.tail, 0.45);
+          g.beginPath();
+          g.moveTo(x, y);
+          g.lineTo(x - 9, y - 4);
+          g.lineTo(x - 9, y + 4);
+          g.closePath();
+          g.moveTo(x, y);
+          g.lineTo(x + 9, y - 4);
+          g.lineTo(x + 9, y + 4);
+          g.closePath();
+          g.fill();
+        }
+      }
+      g.save();
+      g.translate(cx, cy);
+      drawKiteShape(g, model, size, st.color, accent);
+      g.restore();
+    });
   }
 
   help(): void {
@@ -179,7 +266,29 @@ export class Menu {
     if (sc) {
       data.settings.scene = sc as SceneId;
       writeSave(data);
+      this.hooks.sceneChanged?.(sc as SceneId);
       this.home();
+      return;
+    }
+    const model = t.getAttribute('data-model');
+    if (model) {
+      data.settings.model = model as KiteModel;
+      writeSave(data);
+      this.custom();
+      return;
+    }
+    const color = t.getAttribute('data-color');
+    if (color) {
+      data.settings.color = color;
+      writeSave(data);
+      this.custom();
+      return;
+    }
+    const tail = t.getAttribute('data-tail');
+    if (tail) {
+      data.settings.tail = tail;
+      writeSave(data);
+      this.custom();
       return;
     }
     const opp = t.getAttribute('data-opp');
@@ -215,6 +324,9 @@ export class Menu {
         break;
       case 'help':
         this.help();
+        break;
+      case 'custom':
+        this.custom();
         break;
       case 'home':
         this.hooks.toMenu();

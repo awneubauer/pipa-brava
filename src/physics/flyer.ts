@@ -253,7 +253,7 @@ export function stepFlyer(f: Flyer, env: FlyerEnv, dt: number): void {
     f.alpha = aero.alpha;
     // o arrasto aerodinâmico é "rígido" em alta velocidade para uma pipa leve:
     // a aceleração total é aplicada de forma semi-implícita (o equilíbrio não muda)
-    const kd = (PHYSICS.airDensity * p.area * (p.cl + p.cd90) * aero.airspeed) / p.mass;
+    const kd = (PHYSICS.airDensity * (p.area * (p.cl + p.cd90) + p.tailCdA) * aero.airspeed) / p.mass;
     const imp = 1 / (1 + kd * dt * 0.5);
     let fx = aero.fx;
     let fy = aero.fy - p.mass * PHYSICS.gravity;
@@ -362,7 +362,7 @@ export function stepFlyer(f: Flyer, env: FlyerEnv, dt: number): void {
       f.redTimer = Math.max(0, f.redTimer - dt * 2);
     }
     f.strain += (f.tension01 - f.strain) * Math.min(1, dt / 0.06);
-    if (env.lineBreaks && attached && (f.strain >= 1.3 || f.redTimer > TENSION.redBreakTime)) {
+    if (env.lineBreaks && attached && (f.strain >= 1.6 || f.redTimer > TENSION.redBreakTime)) {
       severLine(f, f.line.n - 3, 'snapped');
       env.emit('snap', f.index, k.x, k.y, 0);
     }

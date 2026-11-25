@@ -32,6 +32,8 @@ export interface SceneLayer {
   y1: number;
   /** densidade de pixels do cache (px por metro) */
   density: number;
+  /** encolhe a camada (coisas distantes parecem menores); padrão 1 */
+  scale?: number;
   draw: (ctx: CanvasRenderingContext2D) => void;
 }
 

@@ -259,7 +259,7 @@ export class Renderer {
     for (let li = 0; li < this.layers.length; li++) {
       const L = this.layers[li];
       const f = L.layer.factor;
-      const S = cam.layerScale(f);
+      const S = cam.layerScale(f) * (L.layer.scale ?? 1);
       const base = this.layerBase(cam, f);
       const camX = cam.x * f;
       const top = base - L.layer.y1 * S;

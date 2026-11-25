@@ -51,10 +51,24 @@ Modo debug: abra com `?debug=1` (fps, tensão, vento, posição, hitboxes).
 - **Feedback de corte**: faíscas no cruzamento, brilho crescente na linha danificada, câmera lenta de 0,6 s a 0,3×, tremor, vibração, flash e textos "CORTOU!" / "FOI CORTADO!". A pipa cortada perde a tensão, vira com o vento, balança e desce até o chão.
 - **Derrota**: linha cortada, arrebentada, pipa queimada no fio, rasgada, ou estoque zerado com a pipa presa (enroscada ou cruzada) por 2 s.
 
+## Decisões técnicas (Fase 3 — cenários, perigos, personalização)
+
+- **Cenários** (`src/scenes/`): cada um tem uma parte física (`world()`: chão/telhados, vento, zonas de turbulência, perigos, mãos dos adversários) separada da arte (`art()`), para os testes rodarem sem navegador.
+  - **Favela no morro**: casas de tijolo e reboco colorido empilhadas na encosta, lajes com grade, escadaria, caixas d'água azuis e pretas, parabólicas, antenas, roupa no varal, emaranhado de fios e pipas ao fundo. O jogador solta da laje. Vento turbulento e com rajadas (zonas de turbulência sobre o morro).
+  - **Campo de várzea**: gramado falhado, traves, muro com grafite abstrato, arquibancada de concreto, casas baixas, mangueira e silhuetas de crianças jogando bola. Vento aberto e constante.
+  - **Centro de São Paulo**: Copan com a fachada ondulada, Edifício Itália, Ponte Estaiada (mastro em X com estais), MASP (caixa suspensa com os pórticos vermelhos e o vão livre) e a Paulista com postes e fiação. Prédios próximos geram vento canalizado e turbulento.
+  - **Rio de Janeiro**: calçadão de Copacabana com as ondas pretas e brancas, areia, mar, Pão de Açúcar com o bondinho e os cabos e o Cristo no Corcovado. Brisa forte e estável.
+- **Camadas**: cada camada tem fator de paralaxe e escala própria (coisas distantes ficam menores) e é pré-renderizada em pedaços. As silhuetas são genéricas: sem logos, marcas ou pessoas reais.
+- **Perigos** (só letais na Simulação): fios de luz (encostar = queima e perde a linha), postes, antenas, caixas d'água, árvores e prédios (encostar devagar = enrosca; dá para soltar mantendo a linha puxada por 3 s; bater acima de ~10 m/s = rasga). No Arcade tudo só quica com um balão "Eita!".
+- **Personalização**: 6 modelos (raia, pião, papagaio, estrela, coração e quadrada) e 8 cores para a pipa e para a rabiola, com prévia. Salvo no `localStorage`.
+- **Tutorial** na primeira partida, em 3 passos (puxar, soltar carretel, cortar) com mãozinha animada; pode ser pulado.
+- **Ajustes de física desta fase**: rabiola passou a ter arrasto próprio (freia a pipa em loops), linha um pouco mais elástica (rigidez 70 N/m) para trancos menos secos, e a linha só arrebenta por tensão sustentada (1,5 s no vermelho) ou pico muito alto (1,6× a ruptura nominal por ~60 ms).
+
 ## Testes
 
 - `tests/flight.test.ts` — (a) voo estável com vento de 3 a 9 m/s, voo com rajadas, loop e puxão.
 - `tests/longrun.test.ts` — (b) 10 minutos simulados com comandos aleatórios sem NaN nem explosão da linha.
 - `tests/reel.test.ts` — (d) estoque do carretel nunca negativo nem acima do limite.
 - `tests/maneuvers.test.ts` — manobras do arcade detectadas.
+- `tests/scenes.test.ts` — os 4 cenários rodam 60 s com 3 adversários sem NaN; fio queima na Simulação e só quica no Arcade.
 - `tests/cut.test.ts` — (c) cruzamento entre linhas iguais resolve em 1,5–4 s de deslizamento (lateral, puxando e soltando; 2–4 m/s; tensões 0,4–0,6) e partida completa contra a IA.

@@ -25,8 +25,8 @@ export const PHYSICS = {
   /** Diâmetro efetivo da linha para arrasto (m). */
   lineDiameter: 0.0006,
   /** Rigidez/amortecimento da elasticidade da linha (N/m e N·s/m) no trecho da mão. */
-  lineStiffness: 150,
-  lineDamping: 2.4,
+  lineStiffness: 70,
+  lineDamping: 1.4,
   /** Comprimento mínimo de linha fora do carretel (m). */
   minLineOut: 2.5,
   /** Velocidade máxima do braço do jogador (m/s) e alcance (m). */
@@ -52,6 +52,8 @@ export interface KiteParams {
   bridleRange: number;
   /** Rabiola: torque do peso (N·m), alinhamento com o movimento e amortecimento. */
   tailWeightTorque: number;
+  /** arrasto da rabiola (m²·Cd) — freia a pipa e estabiliza */
+  tailCdA: number;
   /** endireitamento extra pelo vento na rabiola (N·m, satura) */
   tailUpright: number;
   tailAlign: number;
@@ -69,11 +71,12 @@ export const KITE: KiteParams = {
   inertia: 0.005,
   area: 0.5,
   cl: 1.05,
-  cd0: 0.07,
+  cd0: 0.12,
   cd90: 1.2,
   pitch: 0.3,
   bridleRange: 0.14,
   tailWeightTorque: 0.06,
+  tailCdA: 0.05,
   tailUpright: 0.45,
   tailAlign: 0.002,
   tailDamp: 0.01,
@@ -107,7 +110,7 @@ export const TENSION = {
   yellow: 0.68,
   red: 0.86,
   /** Segundos acumulados na vermelha até arrebentar (simulação). */
-  redBreakTime: 1.1,
+  redBreakTime: 1.5,
   /** Arcade: acima disto o carretel alivia sozinho. */
   arcadeRelief: 0.74,
 };

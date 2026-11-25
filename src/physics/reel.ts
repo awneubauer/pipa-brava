@@ -36,7 +36,7 @@ export function releaseGrip(t01: number): number {
 
 /** Fração da velocidade de recolhimento possível contra a tração atual. */
 export function retrieveGrip(t01: number): number {
-  const x = (t01 - 0.3) / 0.5;
+  const x = (t01 - 0.03) / 0.45;
   const c = x < 0 ? 0 : x > 1 ? 1 : x;
   return 1 - c * c * (3 - 2 * c) * 0.97;
 }

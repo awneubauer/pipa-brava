@@ -75,7 +75,7 @@ export function createWorld(scene: SceneWorld, mode: ModeId, look: PlayerLook, p
       emit: (type, flyer, x, y, value) => events.push(type, flyer, x, y, value),
     },
   };
-  const player = createFlyer(0, true, 'Você', scene.launch.x, scene.launch.y, MODES[mode].stock, LINE_TYPES[playerLine], look, 22);
+  const player = createFlyer(0, true, 'Você', scene.launch.x, scene.launch.y, MODES[mode].stock, LINE_TYPES[playerLine], look, 28);
   w.flyers.push(player);
   return w;
 }

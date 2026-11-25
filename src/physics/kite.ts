@@ -145,6 +145,11 @@ export function computeAero(
     fx = qA * (cl * lx + cd * ux);
     fy = qA * (cl * ly + cd * uy);
     fz = qA * (cl * lz + cd * uz);
+    // arrasto da rabiola (sempre na direção do vento relativo)
+    const tq = 0.5 * rho * s * s * p.tailCdA;
+    fx += tq * ux;
+    fy += tq * uy;
+    fz += tq * uz;
   }
 
   // ---- rabiola e estabilidade de rumo (no plano da tela) ----
