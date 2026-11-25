@@ -11,6 +11,9 @@ import { clamp, wrapAngle } from '../util/noise';
  * - toque rápido = puxão: tranco + recolhida rápida, a pipa dispara.
  * A física é a mesma do modo Pro; só a mão do jogador é ajudada.
  */
+/** altura (m acima da mão) onde a pipa para quando recolhida */
+export const RECOLHE_ALT = 9;
+
 export type Maneuver = 'none' | 'puxada' | 'embicada' | 'linha' | 'recolhe';
 
 export interface EasyState {
@@ -82,18 +85,15 @@ export function easyControl(
       c.assistBoost = 0.9;
       forceReel = 0.8;
     } else if (st.move === 'recolhe') {
-      // recolhe a linha rápido: a pipa vem na direção da mão
-      const dx = f.handX - k.x;
-      const dy = f.handY + 12 - k.y;
-      const d = Math.hypot(dx, dy) || 1;
-      tx = k.x + (dx / d) * 10;
-      ty = k.y + (dy / d) * 10;
-      // o carretel puxa e a linha traz a pipa (esticada, sem barriga embolando);
-      // a mão só ajuda de leve na direção certa
-      // vento quase não pesa (boost > 1), mas a pipa vem no máximo ~19 m/s:
-      // o carretel acompanha e a linha não sobra
+      // traz a pipa até um ponto fixo perto da mão e para ali, sem tremer
+      tx = f.handX;
+      ty = f.handY + RECOLHE_ALT;
+      const dist = Math.hypot(k.x - f.handX, k.y - f.handY, k.z - f.handZ);
+      const far = Math.hypot(k.x - tx, k.y - ty) > 3;
+      // vento quase não pesa (boost > 1), mas a pipa vem no máximo ~19 m/s e o carretel acompanha:
+      // a linha volta esticada; perto do ponto, recolhe só a sobra
       c.assistBoost = 1.05;
-      forceReel = L > 14 ? -1 : 0;
+      forceReel = far ? -1 : -clamp((L - dist - 0.5) / 2, 0, 1);
       recolhendo = true;
     }
     if (st.moveT <= 0) st.move = 'none';

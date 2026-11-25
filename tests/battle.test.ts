@@ -181,7 +181,14 @@ describe('Batalha no Céu (fases)', () => {
     }
     // a linha volta esticada: sem sobra que embole
     expect(maxSlack).toBeLessThan(2);
-    expect(f.reel.out).toBeLessThan(30);
+    // recolhe até perto da mão (~9 m) e fica estável, sem tremer
+    for (let i = 0; i < 3 * 60; i++) {
+      startManeuver(es, 'recolhe', 0, 0);
+      easyControl(f, false, 0, 0, false, es, 1 / 60);
+      run(f, env, 1 / 60);
+    }
+    expect(f.reel.out).toBeLessThan(12);
+    expect(Math.hypot(f.kite.vx, f.kite.vy)).toBeLessThan(1);
     expect(Math.hypot(f.kite.x - f.handX, f.kite.y - f.handY)).toBeLessThan(d0 * 0.6);
   });
 
